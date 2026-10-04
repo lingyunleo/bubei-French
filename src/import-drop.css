@@ -1,0 +1,9 @@
+/* A local drop entrance; never place a full-screen overlay over the library. */
+.import-drop-area{position:relative;outline:1px dashed transparent;outline-offset:9px;border-radius:12px;transition:outline-color 150ms ease,box-shadow 150ms ease,background-color 150ms ease}
+.import-drop-hint{flex-basis:100%;font-size:12px;line-height:1.6;color:var(--muted);pointer-events:none}
+.import-drop-area.import-drop-dragging{outline-color:var(--line)}
+.import-drop-area.import-drop-ready{outline-color:var(--accent);background:var(--accent2);box-shadow:0 0 0 8px var(--accent2)}
+.import-drop-dragging .import-drop-hint{color:var(--accent)}
+:root[data-motion=simple] .import-drop-area{transition:none}
+@media(prefers-reduced-motion:reduce){.import-drop-area{transition:none}}
+@media(hover:none),(pointer:coarse),(max-width:760px){.import-drop-hint{display:none}.import-drop-dragging .import-drop-hint{display:block}}

@@ -1,0 +1,29 @@
+/* Product feedback uses the shared colour tokens and motion preference.
+   No transforming ancestor is added around real learning fields. */
+body[data-carnet-view=app] #app .main{animation:none}
+.hero{padding:26px 0 30px}
+.hero h1{font:500 clamp(35px,3.5vw,49px)/1.4 var(--font-display);letter-spacing:-.02em;margin:12px 0 20px}
+.hero h1 br{display:initial}
+.hero .eyebrow{display:block;color:var(--accent)}
+.task-card:not(.review){background:linear-gradient(140deg,var(--accent-soft),var(--surface) 82%)}
+.editorial-line{display:block;overflow:hidden;padding-bottom:.09em;margin-bottom:-.09em}.editorial-line>span{display:block}
+.editorial-count{position:relative;font-variant-numeric:tabular-nums}.editorial-count-source{color:transparent}.editorial-count-display{position:absolute;inset:0;pointer-events:none;color:var(--ink)}
+.context-grid .context-card{background:linear-gradient(145deg,color-mix(in srgb,var(--accent-soft) 66%,var(--surface)),var(--surface) 82%);transition:box-shadow .24s ease,border-color .24s ease}
+.context-grid .context-card.context-tilt-active{box-shadow:0 16px 35px color-mix(in srgb,var(--ink) 9%,transparent),inset 0 1px 0 color-mix(in srgb,var(--surface) 70%,white)}
+.context-grid .context-card::after{display:block}
+@media(hover:hover) and (pointer:fine){.context-grid .context-card::before{display:block}.context-grid .context-card:hover{box-shadow:0 12px 32px color-mix(in srgb,var(--ink) 8%,transparent)}}
+/* An automatic flex basis retains content's natural height in WebKit.
+   The body alone scrolls; morphing can still temporarily pin the outer panel. */
+#modal{width:min(920px,calc(100vw - 64px));max-width:calc(100vw - 64px);max-height:calc(var(--vh) - 64px)}
+#modal.compact{width:min(560px,calc(100vw - 64px));max-width:calc(100vw - 64px)}
+#modal-body{flex:1 1 auto;min-height:0}
+#modal:not(.compact):not(.motion-morphing){min-height:min(480px,calc(var(--vh) - 64px))}
+#modal>header,#modal>footer{flex:0 0 auto}
+@media(max-width:760px){
+ .hero{padding:10px 0 25px}.hero h1{font-size:clamp(31px,7.9vw,39px);margin:10px 0 18px}.hero .eyebrow{font-size:11px}
+ #modal,#modal.compact{width:calc(100vw - 16px);max-width:calc(100vw - 16px);max-height:calc(var(--vh) - 24px)}
+ #modal:not(.compact):not(.motion-morphing){min-height:0;height:calc(var(--vh) - 24px)}
+ #modal.compact{height:auto}
+}
+@media(prefers-reduced-motion:reduce){.context-grid .context-card{transition:none}.context-grid .context-card::after{display:none}.context-grid .context-card.context-tilt-active{box-shadow:none}}
+:root[data-motion=simple] .context-grid .context-card{transition:none}

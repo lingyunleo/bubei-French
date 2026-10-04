@@ -1,0 +1,40 @@
+/* The viewport frame stays above the native keyboard, including Safari's pan.
+   Keep transforms off the input ancestors except for this measured translation. */
+html.study-viewport,html.study-viewport body{height:100%;overflow:hidden;overscroll-behavior:none}
+html.study-viewport body{position:fixed;inset:0;width:100%}
+html.study-viewport #app{position:fixed;left:0;top:0;width:100%;height:var(--vh);transform:translate3d(0,var(--visual-top,0px),0);overflow:hidden}
+html.study-viewport .study-shell{height:100%;min-height:0;padding-top:env(safe-area-inset-top);padding-bottom:max(8px,env(safe-area-inset-bottom))}
+html.study-viewport .study-area,html.study-viewport .study-question{min-height:0}
+html.study-viewport .study-question{overflow-x:hidden;-webkit-overflow-scrolling:touch;overflow-anchor:none;scroll-padding-block:12px}
+html.study-viewport .spell-input{font-size:31px}
+html.study-viewport .spell-pair .spell-input{font-size:24px}
+html.study-viewport.keyboard-open .study-shell{padding-bottom:6px}
+html.study-viewport.keyboard-open .study-question{scroll-behavior:auto}
+html.compact-study-viewport .study-top{padding-top:4px;padding-bottom:4px;gap:8px}
+html.compact-study-viewport .study-top .text-button,html.compact-study-viewport .study-top .icon-button{min-height:36px;padding-top:3px;padding-bottom:3px}
+html.compact-study-viewport .study-question{display:flex;flex-direction:column;padding:2px 5px 5px;gap:0}
+html.compact-study-viewport .is-spelling .task-label{font-size:10px;margin:2px 0 4px}
+html.compact-study-viewport .is-spelling .word-stage{flex:0 0 auto;padding:4px 0;min-height:min-content}
+html.compact-study-viewport .is-spelling .word-stage .meaning{font-size:18px;line-height:1.4;margin:4px 0}
+html.compact-study-viewport .is-spelling .word-stage .pos{font-size:10px;margin-top:3px}
+html.compact-study-viewport .is-spelling .word-stage>[data-action=speak]{padding:7px 14px!important;min-height:40px}
+html.compact-study-viewport .is-spelling .word-stage>[data-action=speak]+.muted{font-size:11px!important;margin-top:4px!important}
+html.compact-study-viewport .is-spelling .prompt-genders{margin:0;gap:7px}
+html.compact-study-viewport .is-spelling .prompt-genders .gender-voice{padding:6px 10px;min-height:38px}
+html.compact-study-viewport .is-spelling .spell-region{margin-top:auto;flex:none;padding-top:4px}
+html.compact-study-viewport .spell-input{font-size:28px;line-height:1.35;padding:6px 3px;margin-top:4px}
+html.compact-study-viewport .spell-pair{gap:12px}
+html.compact-study-viewport .spell-pair .spell-input{font-size:24px}
+html.compact-study-viewport .accent-row{grid-template-columns:repeat(8,minmax(0,40px));gap:4px;margin-top:7px}
+html.compact-study-viewport .accent-row button{min-height:32px;height:32px;font-size:17px}
+html.compact-study-viewport .study-actions{padding:5px 5px 0}
+html.compact-study-viewport .study-actions .button.primary,html.compact-study-viewport .study-actions .button{min-height:42px;padding:7px 10px;font-size:12px}
+html.compact-study-viewport .shortcut-note{margin-top:3px;min-height:24px}
+html.compact-study-viewport .shortcut-note button{padding-top:2px;padding-bottom:2px;min-height:24px}
+html.short-study-viewport .study-top{padding:0}
+html.short-study-viewport .is-spelling .task-label{margin:0 0 2px;line-height:1.4}
+html.short-study-viewport .is-spelling .spell-region{padding-top:0}
+html.short-study-viewport .spell-input{margin-top:2px;padding-top:3px;padding-bottom:3px}
+html.short-study-viewport .accent-row{margin-top:5px;gap:3px}
+html.short-study-viewport .accent-row button{min-height:30px;height:30px}
+html.short-study-viewport .study-actions{padding-top:4px}

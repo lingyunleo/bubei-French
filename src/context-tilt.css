@@ -1,0 +1,26 @@
+/* Card depth belongs to the notebook only; controls and document scrolling remain native. */
+.context-grid .context-card{position:relative;isolation:isolate}
+.context-grid .context-card.context-tilt-active{transform:perspective(1000px) rotateX(var(--context-rotate-x,0deg)) rotateY(var(--context-rotate-y,0deg));transform-origin:50% 50%;will-change:transform;z-index:1}
+.context-grid .context-card::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;opacity:var(--context-light-opacity,0);background:radial-gradient(ellipse 70% 80% at var(--context-light-x,50%) var(--context-light-y,50%),rgba(255,255,255,.43),rgba(255,255,255,.13) 32%,transparent 72%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.context-grid .context-card > *{position:relative;z-index:1}
+:root[data-theme=dark] .context-grid .context-card::after{background:radial-gradient(ellipse 70% 80% at var(--context-light-x,50%) var(--context-light-y,50%),rgba(255,255,255,.12),rgba(255,255,255,.04) 32%,transparent 72%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.07)}
+@media(prefers-reduced-motion:reduce){.context-grid .context-card.context-tilt-active{transform:none;will-change:auto}.context-grid .context-card::after{display:none}}
+
+/* The ring turns only on the hovered desktop card. Without registered custom
+   properties its equivalent start/end angles leave a quiet, static fallback. */
+@property --context-border-angle{syntax:'<angle>';inherits:false;initial-value:135deg}
+@keyframes context-border-orbit{from{--context-border-angle:135deg}to{--context-border-angle:495deg}}
+@media(hover:hover) and (pointer:fine){
+ .context-grid .context-card{--context-border-tint:rgba(33,123,101,.3);--context-border-green:rgba(29,122,95,.8);--context-border-gold:rgba(186,169,104,.7);--context-border-mint:rgba(102,172,151,.75)}
+ .context-grid .context-card:hover{border-color:var(--context-border-tint)}
+ :root[data-theme=dark] .context-grid .context-card{--context-border-tint:rgba(125,194,168,.3);--context-border-green:rgba(125,194,168,.72);--context-border-gold:rgba(210,190,132,.64);--context-border-mint:rgba(157,215,197,.72)}
+ @supports (background:conic-gradient(from 0deg,#000,#fff)) and ((mask-composite:exclude) or (-webkit-mask-composite:xor)){
+  .context-grid .context-card::before{content:"";position:absolute;inset:-1px;box-sizing:border-box;border-radius:inherit;padding:1.5px;pointer-events:none;z-index:2;opacity:0;background:conic-gradient(from var(--context-border-angle),transparent 0%,var(--context-border-tint) 12%,var(--context-border-green) 28%,var(--context-border-gold) 40%,transparent 52%,var(--context-border-tint) 63%,var(--context-border-mint) 78%,transparent 96%);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;transition:opacity .24s ease}
+  .context-grid .context-card:hover::before{opacity:1;animation:context-border-orbit 4.8s linear infinite}
+ }
+}
+@media(prefers-reduced-motion:reduce){.context-grid .context-card::before{transition:none!important;animation:none!important}}
+
+:root[data-motion=simple] .context-grid .context-card.context-tilt-active{transform:none;will-change:auto}
+:root[data-motion=simple] .context-grid .context-card::before,:root[data-motion=simple] .context-grid .context-card::after{display:none!important;animation:none!important}
+:root[data-motion-paused=true] .context-grid .context-card::before{animation-play-state:paused!important}

@@ -1,0 +1,4 @@
+src/vendor/** linguist-vendored=true
+src/carnet-scene-assets.js linguist-generated=true
+src/atelier-fonts.css linguist-generated=true
+/不背法语-*.html linguist-generated=true

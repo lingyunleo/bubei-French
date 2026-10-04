@@ -1,0 +1,38 @@
+/* Seven calendar days; selection changes the details, never the saved study data. */
+.weekly-activity{--learn-color:#b8772c;--review-color:var(--accent);border-top:1px solid var(--line);margin-top:23px;padding-top:20px;min-width:0}
+:root[data-theme=dark] .weekly-activity{--learn-color:#e7b775}
+.weekly-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.weekly-heading h3{font-size:15px}.weekly-heading small{font-size:10px;color:var(--muted)}
+.weekly-legend{display:flex;gap:18px;font-size:11px;color:var(--muted);margin:13px 0 6px}
+.weekly-legend span{display:inline-flex;align-items:center;gap:6px}
+.weekly-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
+.weekly-new{background:var(--learn-color)}.weekly-review{background:var(--review-color)}
+.weekly-chart{--weekly-gap:5px;position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--weekly-gap);min-width:0;touch-action:pan-y pinch-zoom;user-select:none;-webkit-user-select:none}
+.weekly-chart::before{content:"";position:absolute;top:0;bottom:0;left:0;width:calc((100% - 6 * var(--weekly-gap))/7);border-radius:10px;background:color-mix(in srgb,var(--accent2) 68%,transparent);transform:translateX(calc(var(--weekly-selected-index,6) * (100% + var(--weekly-gap))));transition:transform 220ms cubic-bezier(.22,.8,.3,1);z-index:-1;pointer-events:none}
+.weekly-chart.is-scrubbing{cursor:grabbing}
+.weekly-day{touch-action:pan-y pinch-zoom;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;min-height:44px;padding:7px 0 4px;background:transparent;color:var(--muted);border:0;border-radius:10px;box-shadow:none;transition:background-color .2s,color .2s}
+.weekly-day:hover:not(:active):not(.motion-pressed){box-shadow:none}
+.weekly-day[aria-pressed=true]{background:transparent;color:var(--accent)}
+.weekly-track{height:135px;display:flex;align-items:center;justify-content:flex-end;flex-direction:column;width:100%;position:relative;isolation:isolate;padding-bottom:2px}
+.weekly-track::before{content:"";position:absolute;top:0;bottom:0;left:calc(50% - .5px);width:1px;background:var(--line);opacity:.55;z-index:-1}
+.weekly-total{font-size:10px;line-height:16px;margin-bottom:5px;opacity:0;font-variant-numeric:tabular-nums;transition:opacity .15s}
+.weekly-day[aria-pressed=true] .weekly-total{opacity:1}
+.weekly-stack{display:flex;flex-direction:column;gap:3px;justify-content:flex-end;width:14px;max-width:55%;position:relative;opacity:.5;transition:opacity .18s}
+.weekly-day[aria-pressed=true] .weekly-stack{opacity:1}
+.weekly-segment{display:block;border-radius:99px;flex:none;width:100%}
+.weekly-stack.is-empty{height:3px;background:var(--line);border-radius:3px;opacity:1}
+.weekly-date{font-size:10px;line-height:24px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.weekly-count-wrap{display:inline-grid;position:relative;vertical-align:baseline;overflow:hidden;isolation:isolate}
+.weekly-count-wrap strong{display:inline-block}
+.weekly-count-previous{position:absolute;inset:0 auto auto 0;pointer-events:none;font:32px/1.3 Georgia,"Times New Roman",serif;letter-spacing:-.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+.weekly-details{margin-top:15px;padding-top:12px;border-top:1px solid var(--line)}
+.weekly-selected-date{font-size:11px;color:var(--muted);margin-bottom:9px;min-height:19px}
+.weekly-counts{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:0}
+.weekly-counts dt{font-size:11px;color:var(--muted)}.weekly-counts dd{margin:2px 0 0;font-size:11px;color:var(--muted)}
+.weekly-counts strong{font:32px/1.3 Georgia,"Times New Roman",serif;letter-spacing:-.5px;color:var(--ink);margin-right:5px;font-variant-numeric:tabular-nums}
+.weekly-instruction{font-size:10px;color:var(--muted);margin-top:12px;line-height:1.7}
+.weekly-touch-help{display:none}
+@media(max-width:760px){.weekly-activity{scroll-margin-bottom:calc(86px + env(safe-area-inset-bottom))}.weekly-chart{--weekly-gap:2px}.weekly-track{height:126px}.weekly-stack{width:12px}.weekly-date{font-size:10px}.weekly-heading{gap:4px}.weekly-counts strong,.weekly-count-previous{font-size:30px}}
+@media(hover:none) and (pointer:coarse){.weekly-desktop-help{display:none}.weekly-touch-help{display:inline}}
+html[data-motion=simple] .weekly-chart::before,html[data-motion=simple] .weekly-day,html[data-motion=simple] .weekly-total,html[data-motion=simple] .weekly-stack{transition:none}
+@media(prefers-reduced-motion:reduce){.weekly-chart::before,.weekly-day,.weekly-total,.weekly-stack{transition:none}}

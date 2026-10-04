@@ -1,0 +1,60 @@
+/* A quiet surface highlight, inspired by the reference's fourth button.
+   Hover never changes geometry or transform; the existing press/spring owns those. */
+@media (hover:hover) and (pointer:fine) {
+  :where(button,.button):where(:not(:disabled):not([aria-disabled="true"])):hover {
+    background-color:color-mix(in srgb,var(--accent2) 70%,var(--surface));
+    border-color:color-mix(in srgb,var(--accent) 44%,var(--line));
+  }
+  :where(button,.button):where(:not(:disabled):not([aria-disabled="true"])):hover:not(:active):not(.motion-pressed) {
+    box-shadow:0 2px 7px color-mix(in srgb,var(--accent) 9%,transparent);
+  }
+  .button.primary:where(:not(:disabled):not([aria-disabled="true"])):hover {
+    background-color:color-mix(in srgb,var(--accent) 91%,var(--ink));
+    border-color:color-mix(in srgb,var(--accent) 91%,var(--ink));
+  }
+  .accent-row button:where(:not(:disabled)):hover {
+    background-color:var(--accent2);
+    border-color:color-mix(in srgb,var(--accent) 65%,var(--line));
+    color:var(--accent);
+  }
+  .button.soft:where(:not(:disabled):not([aria-disabled="true"])):hover,
+  .deck-button.active:where(:not(:disabled)):hover {
+    background-color:color-mix(in srgb,var(--accent) 12%,var(--accent2));
+  }
+  .button.danger:where(:not(:disabled)):hover {
+    background-color:color-mix(in srgb,var(--danger) 9%,var(--surface));
+    border-color:color-mix(in srgb,var(--danger) 48%,var(--line));
+  }
+  .icon-button:where(:not(:disabled)):hover,
+  .text-button:where(:not(:disabled)):hover {
+    color:var(--accent);
+    background-color:var(--accent2);
+  }
+  .text-button:where(:not(:disabled)):hover:not(:active):not(.motion-pressed) {
+    box-shadow:none;
+    text-decoration:underline;
+    text-decoration-thickness:1px;
+    text-underline-offset:5px;
+  }
+  .nav-item:where(:not(:disabled)):hover,
+  .mobile-nav button:where(:not(:disabled)):hover {
+    color:#fff;
+    background-color:#294456;
+  }
+  .nav-item.active:where(:not(:disabled)):hover,
+  .mobile-nav button.active:where(:not(:disabled)):hover {background-color:#3a566b}
+  .sidebar-bottom .text-button:where(:not(:disabled)):hover {
+    color:#fff;
+    background-color:#294456;
+  }
+  .choice:where(:not(:disabled)):hover,
+  .word-row:where(:not(:disabled)):hover {
+    background-color:var(--accent2);
+    border-color:color-mix(in srgb,var(--accent) 65%,var(--line));
+  }
+  :root[data-theme=dark] .nav-item:where(:not(:disabled)):hover,
+  :root[data-theme=dark] .mobile-nav button:where(:not(:disabled)):hover,
+  :root[data-theme=dark] .sidebar-bottom .text-button:where(:not(:disabled)):hover {background-color:#294538}
+  :root[data-theme=dark] .nav-item.active:where(:not(:disabled)):hover,
+  :root[data-theme=dark] .mobile-nav button.active:where(:not(:disabled)):hover {background-color:#375441}
+}

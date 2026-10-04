@@ -1,0 +1,12 @@
+node_modules/
+test-results/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*
+!.env.example
+src/*.html
+!src/index.html
+*.log
+*.backup.json

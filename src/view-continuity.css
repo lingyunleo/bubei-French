@@ -1,0 +1,22 @@
+/* One quiet selection plate, shared across the persistent navigation. */
+.sidebar nav {position:relative;isolation:isolate}
+.mobile-nav {isolation:isolate}
+.navigation-plate {position:absolute;top:0;left:0;pointer-events:none;border-radius:13px;background:#304b61;z-index:-1;transition:transform 220ms cubic-bezier(.22,.8,.25,1),width 220ms cubic-bezier(.22,.8,.25,1),height 220ms cubic-bezier(.22,.8,.25,1)}
+.sidebar nav>.nav-item.active,.mobile-nav>button.active {background:transparent}
+.sidebar nav>.nav-item,.mobile-nav>button {position:relative;z-index:0}
+:root[data-theme=dark] .navigation-plate {background:#304c3c}
+.operation-button {position:relative}
+.operation-button>.operation-label {visibility:hidden}
+.operation-status {position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:7px;pointer-events:none;font:inherit;padding:inherit}
+.operation-status svg {width:16px;height:16px;flex:none}
+.operation-spinner {width:13px;height:13px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:operation-spin .8s linear infinite}
+@keyframes operation-spin {to{transform:rotate(360deg)}}
+#import-file-status {min-height:1.6em;font-size:12px;color:var(--accent);margin:8px 0}
+.completion-mark {width:48px;height:48px;border-radius:50%;background:var(--accent2);color:var(--accent);margin:0 auto 12px}
+.completion-mark svg {display:block;width:100%;height:100%}
+@media(max-width:760px){.mobile-nav .navigation-plate{border-radius:9px}}
+:root[data-motion=simple] .navigation-plate {transition:none}
+:root[data-motion=simple] .operation-spinner {animation:none}
+@media(prefers-reduced-motion:reduce){.navigation-plate{transition:none}.operation-spinner{animation:none}}
+
+.motion-preference-note {margin:-5px 0 18px}

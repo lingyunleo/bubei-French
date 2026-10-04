@@ -1,0 +1,13 @@
+/* Keep the summary native and the surrounding document in normal flow. */
+.motion-disclosure > summary{position:relative;display:block;list-style:none;padding-inline-end:34px;overflow-wrap:anywhere;cursor:pointer}
+.motion-disclosure > summary::-webkit-details-marker{display:none}
+.motion-disclosure > summary::marker{content:''}
+.motion-disclosure > summary:focus-visible{outline:2px solid var(--accent);outline-offset:5px;border-radius:4px}
+.disclosure-indicator{position:absolute;inset-inline-end:2px;top:2px;width:22px;height:22px;color:var(--accent);pointer-events:none}
+.disclosure-indicator::before,.disclosure-indicator::after{content:'';position:absolute;left:5px;top:10px;width:12px;height:1.5px;background:currentColor;border-radius:2px}
+.disclosure-indicator::after{transform:rotate(90deg);transition:transform 180ms cubic-bezier(.22,.74,.3,1),opacity 180ms ease}
+.motion-disclosure[data-disclosure-expanded=true] > summary .disclosure-indicator::after{transform:rotate(0);opacity:0}
+.disclosure-content{display:flow-root;min-width:0}
+.disclosure-body[data-disclosure-moving]{overflow:hidden;overflow:clip;will-change:height}
+:root[data-motion=simple] .disclosure-indicator::after{transition:none}
+@media (prefers-reduced-motion:reduce){.disclosure-indicator::after{transition:none}}

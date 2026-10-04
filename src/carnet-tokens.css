@@ -1,0 +1,22 @@
+/* CARNET: independent visual style, color mode and motion. No data semantics. */
+:root,:root[data-design-theme="classic"][data-theme="light"]{
+ --bg:#F4F1E9;--surface:#FFFDF8;--ink:#25352F;--muted:#647068;--accent:#245C4F;--on-accent:#FFFDF8;--accent-soft:#E5EDE7;--line:#D9DED5;--control-border:#7B8880;--brass:#82633E;--danger:#A13F38;
+ --font-reading:Georgia,'Times New Roman','Songti SC',serif;--font-display:'Atelier Serif',Georgia,'Songti SC',serif;
+ --radius:16px;--control-radius:10px;--accent2:var(--accent-soft);--navy:var(--surface);--shadow:0 12px 40px #18201d0a;
+ --sidebar-width:224px;--content-width:1120px;--control-height:48px;--preview-bar-height:42px;
+ font-size:16px;color-scheme:light;
+}
+:root[data-design-theme="classic"][data-theme="dark"]{--bg:#18201D;--surface:#222D27;--ink:#ECEDE4;--muted:#B1BBB1;--accent:#9ECBB2;--on-accent:#18201D;--accent-soft:#30453A;--line:#435046;--control-border:#809B8A;--brass:#CFB080;--danger:#F1ADA1;--shadow:0 12px 40px #0002;color-scheme:dark}
+:root[data-design-theme="atelier"][data-theme="light"]{--bg:#E9E2D6;--surface:#FAF5EA;--ink:#322C26;--muted:#6C6152;--accent:#36584A;--on-accent:#FAF5EA;--accent-soft:#E4E9DD;--line:#D4C6B5;--control-border:#917A63;--brass:#82633E;--danger:#A13F38;--shadow:0 14px 44px #322c2610;color-scheme:light}
+:root[data-design-theme="atelier"][data-theme="dark"]{--bg:#1E211E;--surface:#2B302B;--ink:#F0E8D8;--muted:#B9B3A5;--accent:#AEC5B1;--on-accent:#1E211E;--accent-soft:#3B473C;--line:#4C5148;--control-border:#9A927F;--brass:#CFB080;--danger:#F1ADA1;--shadow:0 14px 44px #0002;color-scheme:dark}
+/* VERDURE keeps the soft green atmosphere of the original learning space.
+   Appearance is optional: adding these palettes does not alter saved defaults. */
+:root[data-design-theme="verdure"][data-theme="light"]{
+ --bg:#F5F4EF;--surface:#FFFEF9;--ink:#182923;--muted:#596F63;--accent:#166B5D;--on-accent:#FFFEF9;--accent-soft:#E4EDE3;--line:#D5E0D5;--control-border:#789186;--brass:#54745E;--danger:#A5433C;
+ --verdure-wash:#DFEBE0;--verdure-nav:#EAF0E7;--verdure-paper:#F0F5EC;--shadow:0 18px 50px #173D3010;color-scheme:light;
+}
+:root[data-design-theme="verdure"][data-theme="dark"]{
+ --bg:#14231F;--surface:#1B2D27;--ink:#E8EEE6;--muted:#B0C4B7;--accent:#9CCEAD;--on-accent:#14231F;--accent-soft:#2B4538;--line:#3A5345;--control-border:#7C9F8A;--brass:#AACB9C;--danger:#F3A297;
+ --verdure-wash:#274536;--verdure-nav:#19372B;--verdure-paper:#223A2E;--shadow:0 18px 50px #0002;color-scheme:dark;
+}
+::selection{background:var(--accent-soft);color:var(--ink)}

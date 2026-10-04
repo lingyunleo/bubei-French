@@ -1,0 +1,21 @@
+/* Choose the preparation prompt by source; both routes feed the same import flow. */
+.prompt-import-guide{margin:0 0 23px}
+.prompt-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;align-items:stretch}
+.prompt-choice-card,.prompt-choice-card.ai-import-guide{display:flex;flex-direction:column;align-items:stretch;gap:0;min-width:0;margin:0;padding:21px 22px;border:1px solid var(--line);border-radius:17px;background:linear-gradient(145deg,var(--accent2),var(--surface));overflow-wrap:anywhere}
+.prompt-card-kicker{color:var(--muted);font-size:11px;line-height:1.7;margin-bottom:8px;letter-spacing:.2px}
+.prompt-choice-card h3,.prompt-choice-card.ai-import-guide h3{font-size:18px;line-height:1.45;font-weight:650}
+.prompt-choice-card p,.prompt-choice-card.ai-import-guide p{font-size:12px;line-height:1.85;color:var(--muted);margin:10px 0 20px;flex:1}
+.prompt-choice-card .button,.prompt-choice-card.ai-import-guide .button{width:100%;min-height:45px;margin-top:auto;padding:10px 12px;background:var(--surface);border-color:var(--line);color:var(--accent);font-size:13px;line-height:1.5;white-space:normal}
+.prompt-import-workflow{font-size:12px;line-height:1.85;color:var(--muted);margin:13px 2px 0}
+.import-format-label{font-size:12px;color:var(--muted);padding-top:18px;border-top:1px solid var(--line);margin-bottom:16px}
+@media(max-width:600px){
+ .prompt-choice-grid{grid-template-columns:1fr;gap:11px}
+ .prompt-choice-card,.prompt-choice-card.ai-import-guide{padding:16px 17px;border-radius:15px}
+ .prompt-card-kicker{font-size:10px;margin-bottom:4px}
+ .prompt-choice-card h3,.prompt-choice-card.ai-import-guide h3{font-size:16px}
+ .prompt-choice-card p,.prompt-choice-card.ai-import-guide p{margin:7px 0 13px;font-size:12px;line-height:1.75}
+ .prompt-choice-card .button,.prompt-choice-card.ai-import-guide .button{font-size:12px;min-height:44px}
+ .prompt-import-workflow{font-size:11px;margin-top:11px}
+ .prompt-import-guide{margin-bottom:17px}
+ .import-format-label{padding-top:14px;margin-bottom:14px}
+}

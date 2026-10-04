@@ -1,0 +1,18 @@
+/* Quiet motion: content stays usable immediately, even during transitions. */
+button,.button{transform-origin:center;transition:background-color 150ms ease,color 150ms ease,border-color 150ms ease,box-shadow 120ms ease,opacity 120ms ease,transform 130ms cubic-bezier(.2,.8,.3,1)}
+button:not(:disabled):active,button.motion-pressed:not(:disabled),.button.motion-pressed{transform:scale(.96);box-shadow:inset 0 2px 5px #081f2526,inset 0 0 0 1px #081f250d;opacity:.9}
+dialog.motion-morphing{overflow:hidden;will-change:width,height,left,top,border-radius}
+dialog.motion-opening::backdrop{animation:panel-backdrop-in 220ms ease both}
+dialog.motion-closing::backdrop{animation:panel-backdrop-out 200ms ease both}
+@keyframes panel-backdrop-in{from{background:#182c2400;backdrop-filter:blur(0)}to{background:#182c2466;backdrop-filter:blur(5px)}}
+@keyframes panel-backdrop-out{from{background:#182c2466;backdrop-filter:blur(5px)}to{background:#182c2400;backdrop-filter:blur(0)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}button:not(:disabled):active,button.motion-pressed:not(:disabled),.button.motion-pressed{transform:none;opacity:.85}dialog.motion-morphing{will-change:auto}}
+
+/* Shared word labels live in the same native top layer, never as a second dialog. */
+.motion-shared-title{position:fixed;display:block;margin:0;padding:0;white-space:normal;overflow-wrap:anywhere;pointer-events:none;z-index:5;contain:layout style}
+.completion-mark{display:block;width:44px;height:44px;margin:0 auto 17px;color:var(--accent)}
+.completion-mark svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+:root[data-motion=simple] *,:root[data-motion=simple] *::before,:root[data-motion=simple] *::after{animation:none!important;transition-duration:0s!important;scroll-behavior:auto!important}
+:root[data-motion=simple] button:not(:disabled):active,:root[data-motion=simple] button.motion-pressed:not(:disabled),:root[data-motion=simple] .button.motion-pressed{transform:none;opacity:.85}
+:root[data-motion=simple] dialog.motion-morphing{will-change:auto}
+:root[data-motion-paused=true] *,:root[data-motion-paused=true] *::before,:root[data-motion-paused=true] *::after{animation-play-state:paused!important}

@@ -1,0 +1,12 @@
+/* Optional keyboard labels are shared across all themes. Actual controls and
+   their keyboard handlers stay available when these visual hints are hidden. */
+:root[data-shortcut-hints="hidden"] .shortcut-key,
+:root[data-shortcut-hints="hidden"] .desktop-hint,
+:root[data-shortcut-hints="hidden"] .desktop-sort-hint{display:none!important}
+.shortcut-note{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+.shortcut-note>[data-action="undo"]{justify-self:start}
+.shortcut-note>.desktop-hint{grid-column:2;text-align:center}
+@media(max-width:760px),(hover:none) and (pointer:coarse){
+ .shortcut-key,.desktop-hint,.desktop-sort-hint,.desktop-shortcut-setting{display:none!important}
+ .shortcut-note{grid-template-columns:1fr}
+}

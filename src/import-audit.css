@@ -1,0 +1,21 @@
+/* Optional source verification stays separate from the learning preview. */
+.import-audit-section{margin:22px 0;padding:20px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.import-audit-section h3{font-size:16px;margin:0 0 8px}
+.import-audit-section .field{margin-top:14px}
+.import-audit-section input[type=file]{max-width:100%;min-width:0}
+.import-audit-section .license-note{margin:8px 0;overflow-wrap:anywhere}
+.import-audit-summary{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:7px 20px;margin:16px 0 8px;color:var(--accent)}
+.import-audit-summary span{color:var(--muted);font-size:12px}
+.import-audit-details{margin:10px 0;border-top:1px solid var(--line);padding-top:10px}
+.import-audit-details summary{font-size:13px;color:var(--ink);cursor:pointer}
+.import-audit-details ul{padding-left:20px;margin:8px 0;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.import-audit-warning{color:var(--danger,#a34c35);font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.import-audit-info{color:var(--muted);font-size:12px;line-height:1.65}
+.import-restore-choice{margin-top:14px;align-items:flex-start;font-size:13px}
+.import-restore-choice input{flex:none;margin-top:3px}
+.import-practice-note{font-size:12px;line-height:1.65;color:var(--muted);margin:12px 0}
+.gender-editor{border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.gender-editor .form-grid{margin:12px 0}
+.gender-editor .check-row{align-items:flex-start;font-size:13px}
+.gender-editor input[type=checkbox]{flex:none;margin-top:3px}
+@media(max-width:600px){.import-audit-section{padding:16px 12px;margin:18px 0}.import-audit-section .field input{font-size:16px}.import-audit-summary{align-items:flex-start;flex-direction:column;gap:4px}.gender-editor{padding:12px}.import-audit-section .row{min-width:0}.import-audit-section .row>span{min-width:0;max-width:100%}}

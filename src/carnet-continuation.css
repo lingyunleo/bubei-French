@@ -1,0 +1,23 @@
+/* The latter chapters are ordinary document sections; input ancestors never transform. */
+:root[data-carnet-preview=false][data-design-theme]{--preview-bar-height:0px}
+#carnet-story .carnet-reader-spacer{height:calc(var(--story-h) * 1.65)}
+#carnet-lessons{position:relative;z-index:3;background:var(--bg);box-shadow:0 -40px 90px 65px var(--bg);isolation:isolate}
+#carnet-lessons [data-lesson-chapter]{min-height:var(--carnet-stable-height,100vh);padding-top:110px;padding-bottom:120px;scroll-margin-top:var(--preview-bar-height);position:relative;transform:none!important}
+#carnet-lessons [data-lesson-chapter]:last-child{min-height:max(var(--carnet-stable-height,100vh),820px)}
+.carnet-stepper{max-width:calc(100vw - 410px);overflow-x:auto;scrollbar-width:none}.carnet-stepper button{flex-shrink:0}.carnet-stepper::-webkit-scrollbar{display:none}
+body[data-carnet-chapter="4"] .carnet-scroll-cue,body[data-carnet-chapter="5"] .carnet-scroll-cue,body[data-carnet-chapter="6"] .carnet-scroll-cue,body[data-carnet-chapter="7"] .carnet-scroll-cue{color:var(--muted)}
+@media(max-width:1050px){.carnet-stepper{max-width:calc(100vw - 220px)}}
+@media(max-width:760px){.carnet-stepper{max-width:calc(100vw - 146px)}.carnet-stepper button{min-width:44px;min-height:44px}.carnet-story-footer{gap:10px}.carnet-story-next{min-width:90px}.carnet-story-header{align-items:flex-start;gap:8px}.carnet-story-header .header-actions{margin-top:4px}#carnet-lessons [data-lesson-chapter]{padding-top:104px;padding-bottom:112px}#carnet-lessons [data-lesson-chapter]:last-child{min-height:var(--carnet-stable-height,100vh)}}
+@media(max-height:600px){#carnet-lessons [data-lesson-chapter]{padding-top:100px;padding-bottom:100px}.carnet-story-brand small{display:none}}
+
+/* The book hands over to a full-width, quiet sheet for real reading and input. */
+#carnet-lessons{width:100%;margin:0;padding-inline:max(40px,calc((100% - 1120px)/2));box-shadow:0 -40px 90px 65px var(--bg)}
+body[data-carnet-phase=lesson] .carnet-story-brand{color:var(--ink);text-shadow:none;background:var(--surface);border-color:var(--line)}
+body[data-carnet-phase=lesson] .carnet-story-header .text-button{color:var(--ink);background:var(--surface);border-color:var(--line)}
+body[data-carnet-phase=lesson] .carnet-scroll-cue{text-shadow:none;background:var(--surface)}
+body[data-carnet-phase=lesson] .carnet-scroll-cue::before{background:var(--line)}
+@media(max-width:900px){#carnet-lessons{padding-inline:24px}}
+@media(max-width:700px){#carnet-lessons{padding-inline:16px}.carnet-lesson-accents{display:flex;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;padding-block:3px}.carnet-lesson-accents button{flex:0 0 44px}.carnet-demo-keyboard .carnet-story-header,.carnet-demo-keyboard .carnet-story-footer{visibility:hidden;pointer-events:none}.carnet-demo-keyboard #carnet-preview-bar{visibility:hidden}}
+/* Reuse the app's native disclosure indicator after enhancement. */
+.carnet-pace.motion-disclosure summary::after{content:none}
+.carnet-pace summary .disclosure-indicator{top:50%;margin-top:-11px}

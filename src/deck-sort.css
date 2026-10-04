@@ -1,0 +1,22 @@
+/* A fixed-footprint placeholder keeps long deck lists scrollable during sorting. */
+.deck-sort-help{margin:0 0 16px;color:var(--muted);font-size:12px;line-height:1.7}
+.deck-sort-help .desktop-sort-hint{display:block;font-size:11px;opacity:.85}
+.deck-sort-list{position:relative;isolation:isolate;overflow-anchor:none}
+.deck-sort-list .manager-row{position:relative;background:var(--surface);margin:0 0 12px;min-width:0}
+.deck-sort-header{display:flex;align-items:center;gap:10px;min-height:44px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.deck-sort-header .deck-title{flex:1;min-width:0}
+.deck-sort-header .pill{flex:none}
+#deck-sort-list .deck-sort-handle{display:grid;place-items:center;flex:none;width:36px;min-height:44px;padding:0;border:0;background:transparent;color:var(--muted);border-radius:9px;cursor:inherit;touch-action:none;transform:none!important;box-shadow:none!important;transition:background .15s,color .15s}
+.deck-sort-handle svg{width:17px;height:22px;pointer-events:none}
+#deck-sort-list .deck-sort-handle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(hover:hover){.deck-sort-header:hover .deck-sort-handle{background:var(--accent2);color:var(--accent)}}
+.deck-sort-list .manager-actions{margin-left:46px;touch-action:pan-y}
+.deck-sort-list.is-sorting{cursor:grabbing}
+.deck-sort-list .manager-row.is-dragging{position:absolute;left:0;z-index:3;border-color:var(--accent);box-shadow:0 16px 32px #143d3126,0 4px 10px #143d3114;cursor:grabbing;pointer-events:none;will-change:top}
+.deck-sort-list .manager-row.is-dragging .deck-sort-header{cursor:grabbing}
+.deck-sort-placeholder{border:1px dashed var(--accent);border-radius:14px;background:var(--accent2);opacity:.55;margin-bottom:12px;box-sizing:border-box}
+.deck-sort-list.is-saving .deck-sort-header{cursor:progress}
+.deck-sort-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+:root[data-motion=simple] .deck-sort-list .manager-row.is-dragging{box-shadow:none}
+@media(prefers-reduced-motion:reduce){.deck-sort-list .manager-row.is-dragging{box-shadow:none}}
+@media(max-width:760px),(pointer:coarse){.desktop-sort-hint{display:none!important}.deck-sort-list .manager-actions{margin-left:0}.deck-sort-header{gap:8px}#deck-sort-list .deck-sort-handle{width:32px}.deck-sort-header .pill{font-size:10px}}

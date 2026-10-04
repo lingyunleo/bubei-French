@@ -1,0 +1,29 @@
+/* Shared heart shape/size, readable source provenance and paged import review. */
+.favorite-button{font-size:25px;line-height:1;color:var(--muted);flex:none}
+.favorite-button span{font:inherit;line-height:1}
+.favorite-button[aria-pressed="true"]{color:var(--accent)}
+.favorite-button.framed{border:1px solid var(--line);background-color:var(--surface);min-width:44px;min-height:44px;border-radius:12px}
+.dictionary-details{margin:22px 0;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);font-size:13px}
+.dictionary-details summary{color:var(--accent);cursor:pointer;font-weight:550;min-height:28px}
+.dictionary-meta{color:var(--muted);margin:12px 0;font-size:12px}
+.dictionary-original{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;text-align:left}
+.dictionary-details h3{font-size:14px;margin:16px 0 8px}
+.import-helper{font-size:12px;color:var(--muted);margin:-2px 0 18px}
+.assistant-import-note{margin:12px 0}
+.import-pages{margin:14px 0;font-size:12px}
+
+/* Notices live inside the native dialog's top layer, above its scrollable body. */
+#modal-toast{flex:none;background:var(--accent2);color:var(--accent);padding:11px 24px;border-bottom:1px solid var(--line);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.study-option-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:17px 0;border-bottom:1px solid var(--line)}
+.study-option-row:first-child{padding-top:0}.study-option-row:last-child{border-bottom:0}
+.study-option-row strong{font-size:15px;font-weight:550}.study-option-row p{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.7}
+.preference-switch{flex:none;display:flex;align-items:center;width:48px;min-height:44px;padding:0 3px;background:transparent!important;border:0;position:relative;isolation:isolate;border-radius:99px;color:var(--accent)}
+.preference-switch::before{content:"";position:absolute;left:3px;right:3px;height:26px;border-radius:99px;background:var(--line);border:1px solid var(--muted);opacity:.65;transition:background-color .18s,opacity .18s}
+.preference-switch span{display:block;width:20px;height:20px;border-radius:50%;background:var(--surface);transform:translateX(3px);box-shadow:0 1px 3px #142b2533;transition:transform .22s cubic-bezier(.2,.8,.3,1.15);z-index:1}
+.preference-switch[aria-checked=true]::before{background:var(--accent);border-color:var(--accent);opacity:1}
+.preference-switch[aria-checked=true] span{transform:translateX(19px)}
+.study-options-note{margin-top:15px}.study-skip{width:100%;margin-top:18px}
+.ai-import-guide{display:flex;align-items:flex-start;flex-direction:column;gap:12px;border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:22px;background:var(--accent2)}
+.ai-import-guide h3{font-size:15px}.ai-import-guide p{font-size:12px;color:var(--muted);line-height:1.8;margin-top:7px}
+.ai-import-guide .button{background:var(--surface)}.dictionary-note{font-size:12px;color:var(--muted);margin-top:14px}
+@media(max-width:760px),(hover:none) and (pointer:coarse){.study-option-row.desktop-shortcut-setting{display:none}#modal-toast{padding:10px 16px;font-size:12px}.ai-import-guide{padding:15px}}

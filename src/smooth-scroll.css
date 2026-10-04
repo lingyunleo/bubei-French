@@ -1,0 +1,5 @@
+/* Only an enabled desktop document gets Lenis's sizing/scroll-behavior rules.
+   No overflow lock, scroll-snap override, touch rule or iframe blocking. */
+html.vocab-smooth-scroll,
+html.vocab-smooth-scroll body{height:auto}
+html.vocab-smooth-scroll.lenis-smooth{scroll-behavior:auto!important}

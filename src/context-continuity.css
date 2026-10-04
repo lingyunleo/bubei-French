@@ -1,0 +1,22 @@
+/* The notebook retains its controls and keyed cards. Reflow lives on the wrapper;
+   perspective tilt and conic light keep sole ownership of the card transform. */
+.context-view{min-width:0}
+.context-toolbar{gap:14px}
+.context-segmented{position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:4px;gap:0;background:var(--surface);border:1px solid var(--line);border-radius:17px;max-width:100%}
+.context-segmented::before{content:"";position:absolute;z-index:-1;left:4px;top:4px;bottom:4px;width:calc((100% - 8px)/2);border-radius:13px;background:var(--accent);transform:translateX(0);transition:transform 220ms cubic-bezier(.2,.8,.2,1)}
+.context-segmented[data-selection=all]::before{transform:translateX(100%)}
+.context-segmented .context-filter{min-height:44px;min-width:0;border:0;border-radius:13px;padding:10px 17px;font-size:13px;line-height:1.35;color:var(--muted);background:transparent!important;transition:color 120ms ease;white-space:normal}
+.context-segmented .context-filter[aria-pressed=true]{color:var(--surface);font-weight:600}
+:root[data-theme=dark] .context-segmented .context-filter[aria-pressed=true]{color:#14271f}
+.context-count{font-size:13px;min-width:2ch}
+.context-item{min-width:0;border-radius:20px;align-self:stretch;overflow-anchor:none}
+.context-item>.context-card{height:100%}
+.context-item[hidden],.context-grid[hidden],.context-empty[hidden]{display:none!important}
+.favorite-button{position:relative;overflow:visible}
+.favorite-button>span:first-child{display:inline-block;transform-origin:50% 55%}
+.favorite-button>.favorite-burst{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none;z-index:2}
+.favorite-burst i{position:absolute;left:-2px;top:-2px;width:4px;height:4px;border-radius:50%;background:var(--accent);pointer-events:none;opacity:0}
+:root[data-motion=simple] .context-segmented::before{transition:none}
+:root[data-motion=simple] .favorite-burst{display:none}
+@media(prefers-reduced-motion:reduce){.context-segmented::before{transition:none}.favorite-burst{display:none}}
+@media(max-width:400px){.context-toolbar{gap:9px}.context-segmented{flex:1}.context-segmented .context-filter{padding:10px 9px;font-size:12px}}
