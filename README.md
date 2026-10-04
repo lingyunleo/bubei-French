@@ -60,21 +60,16 @@
 
 ## 本地开发
 
-需要 **Python 3.9+**、**Node.js 22+** 和 npm。以下命令在仓库根目录执行：
+需要 **Python 3.9+**、**Node.js 22+** 和 npm。首次使用按以下顺序执行：
 
 ```sh
 git clone https://github.com/lingyunleo/bubei-French.git
 cd bubei-French
 npm ci
+npx playwright install chromium webkit
 npm run build
 npm test
 npm run test:browser
-```
-
-在首次运行 `npm run test:browser` 前，先安装 Playwright 的 Chromium 和 WebKit：
-
-```sh
-npx playwright install chromium webkit
 ```
 
 Linux 环境缺少系统浏览器依赖时，使用 `npx playwright install --with-deps chromium webkit`。
