@@ -2,7 +2,7 @@
 
 众所周知，不背单词是一款非常好用的英语背单词 app，其简洁优雅的 UI 设计、科学高效的学习体系使得用户体验十分丝滑。
 
-然而，我在学习法语时并没有找到设计得像不背单词这样好的法语背单词 app，于是自己借助 codex 手搓了这样一个法语版不背单词网站。
+然而，我在学习法语时并没有找到设计得像不背单词这样好的法语背单词 app，于是自己借助 Codex 手搓了这样一个法语版不背单词网站。
 
 这个网站的一大特色是所有内容完全放在一个 HTML 中，所有数据均存储在本地，无须注册、无须联网即可随时随地使用。
 
@@ -14,8 +14,8 @@
 
 ## 快速上手
 
-1. 下载根目录的 [不背法语-4.16.1.html](不背法语-4.16.1.html)。
-2. 双击文件，用 Google Chrome、Safari、Microsoft Edge、Firefox 等常见浏览器打开。
+1. 下载最新版附件中的 HTML 文件 [不背法语-4.16.1.html](https://github.com/lingyunleo/bubei-French/releases/download/v4.16.1/bubei-French-4.16.1.html)。
+2. 用 Google Chrome、Safari、Microsoft Edge、Firefox 等常见浏览器打开该文件。
 3. 跟随入门引导体验相关功能、完成个性化设置，之后就可以开始学习啦～
 
 ## 功能介绍
