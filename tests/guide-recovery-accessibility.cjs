@@ -37,6 +37,13 @@ async function language(page,value){
 async function backupFor(page,name){return page.evaluate(name=>VocabData.exportBackup(VocabData.importEntries(VocabData.fresh(),[{french:'lire',meaning:'阅读',pos:'v.'}],{name,mode:'new'}).state),name);}
 async function chooseBackup(page,backup){await page.locator('#backup-input').setInputFiles({name:'synthetic-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});await page.locator('#modal [data-action=commit-restore]').waitFor();}
 async function rawPrimary(page,key='state'){return page.evaluate(key=>new Promise((resolve,reject)=>{const req=indexedDB.open('FR_VOCAB_DATA_V4',1);req.onsuccess=()=>{const db=req.result,q=db.transaction('data','readonly').objectStore('data').get(key);q.onsuccess=()=>{resolve(q.result);db.close();};q.onerror=()=>reject(q.error);};req.onerror=()=>reject(req.error);}),key);}
+async function rejectConcurrentRestore(page){
+ // Both conflicts display the same text. Require a fresh notice mutation so
+ // the second assertion cannot accidentally accept the first operation's error.
+ await page.evaluate(()=>{window.auditRecoveryConflictReceived=false;const notice=document.getElementById('modal-toast');window.auditRecoveryConflictObserver=new MutationObserver(()=>{if(!notice.hidden&&notice.textContent.startsWith('另一窗口已更新。'))window.auditRecoveryConflictReceived=true;});window.auditRecoveryConflictObserver.observe(notice,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden']});});
+ try{await page.locator('#modal [data-action=commit-restore]').click();await page.waitForFunction(()=>window.auditRecoveryConflictReceived&&document.getElementById('modal').open);}
+ finally{await page.evaluate(()=>{window.auditRecoveryConflictObserver?.disconnect();delete window.auditRecoveryConflictObserver;delete window.auditRecoveryConflictReceived;});}
+}
 (async()=>{
  for(const engine of (process.env.CARNET_BROWSERS||'chromium,webkit').split(',')){
   browser=await launchBrowser(engine);
@@ -60,11 +67,11 @@ async function rawPrimary(page,key='state'){return page.evaluate(key=>new Promis
   await page.evaluate(async()=>{let state=VocabData.importEntries(VocabData.fresh(),[{french:'livre',meaning:'书',pos:'n.m.'}],{name:'Existing primary',mode:'new'}).state;state.settings.onboardingComplete=true;for(let n=0;n<3;n++){state=(await VocabData.save(state,{expectedRevision:state.revision})).state;}localStorage.setItem('FR_VOCAB_APP_V4','{broken-fallback-with-primary');});
   await page.reload();await ready(page);assert.equal(await page.evaluate(()=>VocabApp.getState().revision),3);assert.equal(await page.evaluate(()=>VocabApp.getState().decks[0].name),'Existing primary');assert.equal(await page.evaluate(()=>VocabCarnetProduct.getStartup().blocked),true);
   await page.evaluate(()=>VocabCarnetReview.show('journey',{fromStart:true}));await chapter(page,7);await page.locator('[data-lesson-action=restore]').click();const replacement=await backupFor(page,'Confirmed replacement');await chooseBackup(page,replacement);
-  await page.evaluate(()=>localStorage.setItem('FR_VOCAB_APP_V4','{changed-in-another-tab'));await page.locator('#modal [data-action=commit-restore]').click();await page.waitForTimeout(100);
+  await page.evaluate(()=>localStorage.setItem('FR_VOCAB_APP_V4','{changed-in-another-tab'));await rejectConcurrentRestore(page);
   assert.equal(await page.locator('#modal').evaluate(e=>e.open),true);assert.equal((await rawPrimary(page)).decks[0].name,'Existing primary');assert.equal(await page.evaluate(()=>localStorage.getItem('FR_VOCAB_APP_V4')),'{changed-in-another-tab');
   pass(engine,'Recovery preserves a valid primary revision and refuses to overwrite a concurrently changed fallback');
   await page.evaluate(async()=>{localStorage.setItem('FR_VOCAB_APP_V4','{broken-fallback-with-primary');await new Promise((resolve,reject)=>{const req=indexedDB.open('FR_VOCAB_DATA_V4',1);req.onsuccess=()=>{const db=req.result,tx=db.transaction('data','readwrite'),store=tx.objectStore('data'),q=store.get('state');q.onsuccess=()=>{const state=q.result;state.revision++;store.put(state,'state');};tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);};req.onerror=()=>reject(req.error);});});
-  await page.locator('#modal [data-action=commit-restore]').click();await page.waitForTimeout(100);assert.equal(await page.locator('#modal').evaluate(e=>e.open),true);assert.equal((await rawPrimary(page)).revision,4);assert.equal((await rawPrimary(page)).decks[0].name,'Existing primary');
+  await rejectConcurrentRestore(page);assert.equal(await page.locator('#modal').evaluate(e=>e.open),true);assert.equal((await rawPrimary(page)).revision,4);assert.equal((await rawPrimary(page)).decks[0].name,'Existing primary');
   pass(engine,'Recovery also refuses a concurrent primary-archive revision change');
   await page.reload();await ready(page);await page.evaluate(()=>VocabCarnetReview.show('journey',{fromStart:true}));await chapter(page,7);await page.locator('[data-lesson-action=restore]').click();await chooseBackup(page,replacement);await page.locator('#modal [data-action=commit-restore]').click();await page.waitForFunction(()=>VocabApp.getState().decks[0]?.name==='Confirmed replacement');
   assert.equal(await rawPrimary(page,'consumedFallback'),'{broken-fallback-with-primary');assert.equal(await page.evaluate(async()=>(await VocabData.listSnapshots()).some(s=>s.state.decks[0]?.name==='Existing primary')),true);
@@ -84,8 +91,8 @@ async function rawPrimary(page,key='state'){return page.evaluate(key=>new Promis
    pass(engine,locale+': reader failure, retry and sound-chapter failure are visible and localized; translated group labels follow language changes');
   }
   // A failed voice service can recover on retry; only this synthetic playback is stubbed.
-  await chapter(page,3);await page.evaluate(()=>{window.AudioKit={...AudioKit,speak:async(_text,options)=>{options.onStatus?.({state:'playing'});options.onStatus?.({state:'ended'});return {state:'ended',ok:true};}};});
-  await page.locator('[data-carnet=retry-listen]').click();assert.equal(await page.locator('.reader-audio-feedback').isVisible(),false);assert.equal(await page.locator('[data-carnet=listen]').getAttribute('aria-busy'),null);
+  await chapter(page,3);await page.evaluate(()=>{window.auditPlaybackEnded=false;window.AudioKit={...AudioKit,speak:async(_text,options)=>{options.onStatus?.({state:'playing'});options.onStatus?.({state:'ended'});window.auditPlaybackEnded=true;return {state:'ended',ok:true};}};});
+  await page.locator('[data-carnet=retry-listen]').click();await page.waitForFunction(()=>window.auditPlaybackEnded&&document.querySelector('.reader-audio-feedback').hidden&&!document.querySelector('[data-carnet=listen]').hasAttribute('aria-busy'));assert.equal(await page.locator('.reader-audio-feedback').isVisible(),false);assert.equal(await page.locator('[data-carnet=listen]').getAttribute('aria-busy'),null);
   pass(engine,'Successful retry clears the previous failure and busy state');await page.context().close();
   page=await boot({reduced:true});await chapter(page,7);await page.locator('[data-lesson-action=finish]').click();await page.waitForFunction(()=>document.body.dataset.carnetView==='app');
   assert.equal(await page.evaluate(()=>VocabCarnetReview.getState().appearance.motion),'immersive');assert.equal(await page.evaluate(()=>VocabCarnetReview.getState().resolved.motion),'reduced');assert.deepEqual(await page.evaluate(()=>auditMainAnimations),[]);
