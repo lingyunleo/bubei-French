@@ -6492,8 +6492,10 @@ window.VocabContextTilt = Object.freeze({ reset });
   display.className='editorial-count-display';display.setAttribute('aria-hidden','true');display.textContent=raw;
   node.replaceChildren(original,display);node.classList.add('editorial-count');
   const state={node,raw,frame:0,finish(){cancelAnimationFrame(this.frame);if(this.node.contains(display)){this.node.textContent=this.raw;this.node.classList.remove('editorial-count')}counters.delete(this)}};
-  counters.add(state);const start=performance.now(),from=Math.max(0,Math.floor(value*.7));
-  const step=now=>{if(!node.isConnected||reduced()||document.hidden||!appVisible()){state.finish();return}const p=Math.min(1,(now-start)/560);display.textContent=String(Math.round(from+(value-from)*(1-Math.pow(1-p,3))));if(p<1)state.frame=requestAnimationFrame(step);else state.finish()};state.frame=requestAnimationFrame(step);
+  counters.add(state);let start=null;const from=Math.max(0,Math.floor(value*.7));
+  // Begin when a frame can actually be painted, not while the browser is still
+  // waiting to schedule it (for example a busy WebKit startup).
+  const step=now=>{if(!node.isConnected||reduced()||document.hidden||!appVisible()){state.finish();return}if(start===null)start=now;const p=Math.min(1,(now-start)/560);display.textContent=String(Math.round(from+(value-from)*(1-Math.pow(1-p,3))));if(p<1)state.frame=requestAnimationFrame(step);else state.finish()};state.frame=requestAnimationFrame(step);
  }
  function enter(node,key,index){
   if(seen.has(key)||!appVisible())return;seen.add(key);
