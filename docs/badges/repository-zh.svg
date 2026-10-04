@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="116" height="22" viewBox="0 0 116 22" role="img" aria-label="GitHub: 项目仓库">
+  <title>GitHub: 项目仓库</title>
+  <defs>
+    <linearGradient id="gloss" x2="0" y2="100%"><stop stop-color="#fff" stop-opacity=".14"/><stop offset=".48" stop-color="#fff" stop-opacity=".03"/><stop offset=".5" stop-color="#000" stop-opacity=".03"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
+    <clipPath id="rounded"><rect width="116" height="22" rx="4"/></clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <path fill="#555" d="M0 0h50v22H0z"/>
+    <path fill="#245e50" d="M50 0h66v22H50z"/>
+    <path fill="url(#gloss)" d="M0 0h116v22H0z"/>
+    <path stroke="#fff" stroke-opacity=".18" d="M.5 1.5h115"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,PingFang SC,Microsoft YaHei,sans-serif" font-size="11">
+    <g fill="#000" opacity=".35"><text x="25" y="16">GitHub</text><text x="83" y="16">项目仓库</text></g>
+    <text x="25" y="15">GitHub</text><text x="83" y="15">项目仓库</text>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="98" height="22" viewBox="0 0 98 22" role="img" aria-label="Privacy: Policy">
+  <title>Privacy: Policy</title>
+  <defs>
+    <linearGradient id="gloss" x2="0" y2="100%"><stop stop-color="#fff" stop-opacity=".14"/><stop offset=".48" stop-color="#fff" stop-opacity=".03"/><stop offset=".5" stop-color="#000" stop-opacity=".03"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
+    <clipPath id="rounded"><rect width="98" height="22" rx="4"/></clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <path fill="#555" d="M0 0h52v22H0z"/>
+    <path fill="#28827a" d="M52 0h46v22H52z"/>
+    <path fill="url(#gloss)" d="M0 0h98v22H0z"/>
+    <path stroke="#fff" stroke-opacity=".18" d="M.5 1.5h97"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,PingFang SC,Microsoft YaHei,sans-serif" font-size="11">
+    <g fill="#000" opacity=".35"><text x="26" y="16">Privacy</text><text x="75" y="16">Policy</text></g>
+    <text x="26" y="15">Privacy</text><text x="75" y="15">Policy</text>
+  </g>
+</svg>

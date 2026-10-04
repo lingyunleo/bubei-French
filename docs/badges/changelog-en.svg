@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="22" viewBox="0 0 108 22" role="img" aria-label="Version: History">
+  <title>Version: History</title>
+  <defs>
+    <linearGradient id="gloss" x2="0" y2="100%"><stop stop-color="#fff" stop-opacity=".14"/><stop offset=".48" stop-color="#fff" stop-opacity=".03"/><stop offset=".5" stop-color="#000" stop-opacity=".03"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
+    <clipPath id="rounded"><rect width="108" height="22" rx="4"/></clipPath>
+  </defs>
+  <g clip-path="url(#rounded)">
+    <path fill="#555" d="M0 0h53v22H0z"/>
+    <path fill="#347da4" d="M53 0h55v22H53z"/>
+    <path fill="url(#gloss)" d="M0 0h108v22H0z"/>
+    <path stroke="#fff" stroke-opacity=".18" d="M.5 1.5h107"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,PingFang SC,Microsoft YaHei,sans-serif" font-size="11">
+    <g fill="#000" opacity=".35"><text x="26.5" y="16">Version</text><text x="80.5" y="16">History</text></g>
+    <text x="26.5" y="15">Version</text><text x="80.5" y="15">History</text>
+  </g>
+</svg>

@@ -8,7 +8,7 @@
 
 希望这个网站能帮你更加高效地记忆法语单词～
 
-[项目仓库](https://github.com/lingyunleo/bubei-French) · [版本记录](CHANGELOG.md) · [隐私说明](PRIVACY.md) · [贡献指南](CONTRIBUTING.md)
+[![项目仓库](docs/badges/repository-zh.svg)](https://github.com/lingyunleo/bubei-French) [![版本记录](docs/badges/changelog-zh.svg)](CHANGELOG.md) [![隐私说明](docs/badges/privacy-zh.svg)](PRIVACY.md) [![贡献指南](docs/badges/contributing-zh.svg)](CONTRIBUTING.md) [![中文](docs/badges/language-zh.svg)](README.md) [![English](docs/badges/language-en.svg)](README.en.md)
 
 ![VERDURE 青绿主题的今日页](docs/screenshots/today-verdure.png)
 
