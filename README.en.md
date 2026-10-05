@@ -10,13 +10,15 @@ I hope this website helps you remember French words more efficiently!
 
 [![Repository](docs/badges/repository-en.svg)](https://github.com/lingyunleo/bubei-French) [![Changelog](docs/badges/changelog-en.svg)](CHANGELOG.md) [![Privacy](docs/badges/privacy-en.svg)](PRIVACY.md) [![Contributing](docs/badges/contributing-en.svg)](CONTRIBUTING.md) [![中文](docs/badges/language-zh.svg)](README.md) [![English](docs/badges/language-en.svg)](README.en.md)
 
-![The Today page in the green VERDURE theme](docs/screenshots/today-verdure.png)
+![The Today page in the green VERDURE theme](docs/screenshots/today-verdure-en.png)
 
 ## Getting started
 
 1. Download the HTML file from the latest release: [不背法语-4.16.1.html](https://github.com/lingyunleo/bubei-French/releases/download/v4.16.1/bubei-French-4.16.1.html).
 2. Open the file in a common browser, such as Google Chrome, Safari, Microsoft Edge, or Firefox.
 3. Follow the onboarding guide to try out the features and make it your own. Then you're ready to start learning!
+
+![English onboarding: read a French example sentence on an open book](docs/screenshots/onboarding-en.png)
 
 ## Features
 
@@ -26,11 +28,17 @@ I hope this website helps you remember French words more efficiently!
 - Choose a Chinese, English, or French interface, with three styles—CLASSIQUE, ATELIER, and VERDURE—each available in light and dark modes.
 - Export word lists, a complete learning backup, or a portable HTML file containing your current data.
 
+![English study interface: a word, its meaning, an example, and recall ratings](docs/screenshots/study-en.png)
+
 The starter content includes 50 common words and 100 example sentences. Of these, 99 examples were written for the project and use text-to-speech, and 1 is a built-in short sentence with a human recording, source information, and a license. These starter examples are intended only for trying out the features.
+
+![English example library: browse, favourite, and listen to sentences](docs/screenshots/examples-en.png)
 
 ## Importing word lists
 
 Open “Import words” in the Library, then choose your prepared file or paste the table contents. Check the entries, meanings, and messages in the preview before confirming the import.
+
+![English word list import: preview entries and meanings before importing](docs/screenshots/import-en.png)
 
 You can directly import a raw CSV exported by 法语助手, but a direct import only extracts the first meaning. It does not automatically generate full usage notes or example sentences.
 
@@ -45,6 +53,8 @@ Supported import formats are `.xlsx`, `.xls`, `.ods`, `.csv`, `.tsv`, and `.txt`
 Normally, your word lists, progress, settings, and imported audio are saved in the current browser. They are not automatically written back to the original HTML file or synced to other devices. If the page says it cannot save your data persistently, export a backup promptly.
 
 Use **Settings → Data & backup → Save backup file** to export a complete backup. It's a good idea to do this before changing devices or browsers, moving the file, upgrading, or clearing browser data.
+
+![English data and backup settings: export, restore, and portable HTML](docs/screenshots/backup-en.png)
 
 To upgrade, first export a backup from the old file. Then open the new version and use “Restore from file” to check the contents and confirm. **Restoring replaces the target page's library and progress; it does not automatically merge two sets of saved data.** An ordinary CSV/TSV word list does not include your full learning progress and cannot replace a JSON backup.
 
