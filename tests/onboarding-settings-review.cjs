@@ -4,15 +4,21 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const {createHash} = require('node:crypto');
 const {pathToFileURL} = require('node:url');
 const paths = require('./paths.cjs');
-const {launchBrowser} = require('./runtime.cjs');
 const file = paths.releaseFile;
 const out = path.join(paths.runRoot, '引导设置读取专项');
 fs.mkdirSync(out, {recursive:true});
+// Enable native browser stderr/exit logging before Playwright is loaded. Keep
+// this in the run artifacts so a Target closed error has a diagnosable cause.
+process.env.DEBUG = [process.env.DEBUG, 'pw:browser'].filter(Boolean).join(',');
+process.env.DEBUG_FILE = path.join(out, 'browser.log');
+const {launchBrowser} = require('./runtime.cjs');
 const report = {
   file, sha256:createHash('sha256').update(fs.readFileSync(file)).digest('hex'), previewFile:path.join(paths.sourceRoot, 'index.html'), checks:[], errors:[], samples:[],
+  browserLog:'browser.log', lifecycleLog:'lifecycle.jsonl', unexpectedClosures:[],
   fixture:{decks:2, wordsPerDeck:2400, source:'Generated test labels, meanings and examples; no personal vocabulary or backups.'},
   instrumentation:[
     'VocabApp.getState/getSettings wrappers count calls without replacing the returned data or implementation.',
@@ -21,10 +27,30 @@ const report = {
     'Regional language tags are assigned to document.documentElement.lang because saved language options are zh/en/fr.',
     'Large vocabulary is generated through the production import/validation API and saved in a fresh browser context. Preview retains its built-in memory-only sample.',
     'Learning-record comparisons include draft text and task state but omit draft.selection, transient caret metadata that may change when a rendered input receives focus.',
+    'The empty-library scene is closed through the normal Today navigation before generating the unchanged 4,800-word fixture; the populated guide still starts through a real page reload.',
   ],
   untested:['Physical devices, native on-screen keyboards, audible speech output and installed system voices.'],
 };
-let browser;
+let browser, browserClosing=false, activeEngine='';
+const pageMetadata=new WeakMap();
+function diagnostic(event,details={}) {
+  const entry={time:new Date().toISOString(),engine:activeEngine,event,...details,memory:{nodeRss:process.memoryUsage().rss,free:os.freemem(),total:os.totalmem()}};
+  if(process.platform==='linux') {
+    entry.cgroup={};
+    for(const name of ['memory.current','memory.max','memory.events'])try{entry.cgroup[name]=fs.readFileSync('/sys/fs/cgroup/'+name,'utf8').trim();}catch(_){/* Not exposed by every runner. */}
+  }
+  fs.appendFileSync(path.join(out,report.lifecycleLog),JSON.stringify(entry)+'\n');
+  if(details.expected===false) report.unexpectedClosures.push(entry);
+}
+function phase(page,value) {const meta=pageMetadata.get(page);meta.phase=value;diagnostic('phase',{...meta});}
+async function closeContext(page) {
+  const meta=pageMetadata.get(page);meta.closing=true;phase(page,'intentional context close');
+  await page.context().close();
+}
+async function closeBrowser() {
+  if(!browser)return;
+  browserClosing=true;diagnostic('intentional browser close');await browser.close();browser=null;
+}
 function pass(engine, name) { report.checks.push({engine,name}); console.log('PASS', engine, name); }
 function instrumentation() {
   const audit = window.__onboardingAudit = {enabled:true, getState:0, getSettings:0, unchangedText:0, textWrites:0, stacks:[], started:performance.now()};
@@ -51,10 +77,14 @@ function instrumentation() {
   window.__auditRead = callback => { const enabled=audit.enabled; audit.enabled=false; try {return callback();} finally {audit.enabled=enabled;} };
 }
 async function ready(page) {
+  phase(page,'wait app globals');
   await page.waitForFunction(()=>window.VocabApp&&window.VocabCarnetReview&&window.VocabCarnetProduct);
+  phase(page,'wait product ready');
   await page.evaluate(()=>VocabCarnetProduct.ready);
-  await page.waitForFunction(()=>window.VocabCarnetReview.getState().lessons&&document.querySelector('.carnet-loading')?.hidden,null,{timeout:90000});
+  phase(page,'wait guide DOM and scene ready');
+  await page.waitForFunction(()=>document.querySelectorAll('#carnet-lessons [data-lesson-chapter]').length===4&&document.querySelector('#carnet-lesson-answer')&&document.querySelector('.carnet-loading')?.hidden,null,{timeout:90000,polling:100});
   await frames(page);
+  phase(page,'ready');
 }
 async function frames(page,n=3) {
   await page.evaluate(n=>new Promise(resolve=>{const tick=()=>--n<=0?resolve():requestAnimationFrame(tick);requestAnimationFrame(tick);}),n);
@@ -63,7 +93,12 @@ async function boot(engine, preview=false) {
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce',acceptDownloads:true});
   await context.addInitScript(instrumentation);
   const page=await context.newPage(); page.setDefaultTimeout(30000);
-  page.on('pageerror',error=>report.errors.push({engine,message:error.message}));
+  const meta={page:engine,phase:'created',closing:false};pageMetadata.set(page,meta);
+  page.on('pageerror',error=>{report.errors.push({engine,message:error.message});diagnostic('pageerror',{...meta,message:error.message});});
+  page.on('crash',()=>diagnostic('page crash',{...meta,expected:false}));
+  page.on('close',()=>diagnostic('page close',{...meta,expected:meta.closing||browserClosing}));
+  context.on('close',()=>diagnostic('context close',{...meta,expected:meta.closing||browserClosing}));
+  phase(page,'navigate '+(preview?'preview':'formal'));
   await page.goto(pathToFileURL(preview?report.previewFile:file).href); await ready(page);
   return page;
 }
@@ -108,6 +143,9 @@ async function copyChecks(page,engine) {
   pass(engine,'App and product settings readers return independent nested settings; both full-state readers retain independent learning snapshots');
 }
 async function seedLarge(page) {
+  // This initial scene is only the empty-library smoke check. Do not retain its
+  // graphics allocations while the test constructs and validates the large data.
+  await show(page,'today');phase(page,'construct and persist unchanged large fixture');
   const result=await page.evaluate(async()=>{
     let next=VocabData.fresh();
     for(let deck=0;deck<2;deck++) {
@@ -124,6 +162,7 @@ async function seedLarge(page) {
     return {persistent:saved.persistent,words:saved.state.decks.reduce((n,d)=>n+d.words.length,0),jsonBytes:new TextEncoder().encode(JSON.stringify(saved.state)).length};
   });
   assert.equal(result.persistent,true); assert.equal(result.words,4800);
+  assert.equal(result.jsonBytes,12004192);phase(page,'large fixture persisted');
   return result;
 }
 async function scrollChapters(page,engine,phase) {
@@ -233,7 +272,7 @@ async function dataAndPreferenceChecks(page,engine) {
   await restored.reload(); await ready(restored); assert.deepEqual(await digest(restored),before);
   await restored.locator('[data-action=resume]').click(); assert.equal(await restored.locator('#spell-input').inputValue(),'ébauche conservée');
   assert.deepEqual(await restored.evaluate(()=>VocabApp.getSettings()),payload.state.settings);
-  await restored.context().close();
+  await closeContext(restored);
   pass(engine,'Actual exported JSON previews without changing data and restores complete vocabulary, progress, settings and unfinished spelling into a new context, including after reload');
 }
 async function previewChecks(engine) {
@@ -241,23 +280,26 @@ async function previewChecks(engine) {
   assert.equal(await page.evaluate(()=>CARNET_PREVIEW),true);
   await auditSample(page,engine,'Separate preview entry startup'); await copyChecks(page,engine+'-preview');
   await scrollChapters(page,engine,'Separate preview entry chapters and native wheel scrolling');
-  await page.context().close();
+  await closeContext(page);
   pass(engine,'Separate development preview exposes working settings reads and scrolls without complete-state reads or unchanged hot-path text writes');
 }
 (async()=>{
   assert.ok(fs.existsSync(file),'Build the formal release before this regression.');
   for(const engine of (process.env.CARNET_BROWSERS||'chromium,webkit').split(',').filter(Boolean)) {
-    browser=await launchBrowser(engine); const page=await boot(engine);
+    activeEngine=engine;browserClosing=false;diagnostic('launch browser');
+    browser=await launchBrowser(engine);browser.on('disconnected',()=>diagnostic('browser disconnected',{expected:browserClosing}));
+    const page=await boot(engine);
     assert.equal(await page.evaluate(()=>CARNET_PREVIEW),false); assert.equal(await page.evaluate(()=>VOCAB_RELEASE),paths.releaseConfig.version);
     await auditSample(page,engine,'Empty formal entry startup');
     report.samples.push({engine,phase:'Synthetic large vocabulary',...await seedLarge(page)});
-    await page.reload(); await ready(page); await auditSample(page,engine,'4,800-word formal entry startup');
+    phase(page,'reload populated formal guide');await page.reload(); await ready(page); await auditSample(page,engine,'4,800-word formal entry startup');
     await copyChecks(page,engine); await languageChecks(page,engine); await dataAndPreferenceChecks(page,engine);
-    await page.context().close(); await previewChecks(engine); await browser.close(); browser=null;
+    await closeContext(page); await previewChecks(engine); await closeBrowser();
   }
-  assert.deepEqual(report.errors,[]); fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(report,null,2));
+  assert.deepEqual(report.errors,[]);assert.deepEqual(report.unexpectedClosures,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(report,null,2));
   console.log('DONE',report.checks.length,out);
 })().catch(async error=>{
-  report.failure=error.stack; fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify(report,null,2));
-  console.error(error); await browser?.close(); process.exitCode=1;
+  report.failure=error.stack;diagnostic('failure',{message:error.message});console.error(error);
+  try{await closeBrowser();}catch(cleanupError){report.cleanupFailure=cleanupError.stack;}
+  fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify(report,null,2));process.exitCode=1;
 });
