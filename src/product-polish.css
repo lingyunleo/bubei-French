@@ -27,3 +27,25 @@ body[data-carnet-view=app] #app .main{animation:none}
 }
 @media(prefers-reduced-motion:reduce){.context-grid .context-card{transition:none}.context-grid .context-card::after{display:none}.context-grid .context-card.context-tilt-active{box-shadow:none}}
 :root[data-motion=simple] .context-grid .context-card{transition:none}
+
+/* Keep the day's primary actions in reach on phones, including a saved session.
+   Content can still grow naturally for long deck names or larger text. */
+@media(max-width:760px){
+ .today-main{padding-top:16px}
+ .today-main .page-header{margin-bottom:12px}
+ .today-main .hero{padding:4px 0 16px}
+ .today-main .hero h1{font-size:clamp(28px,7.5vw,36px);margin:6px 0 10px}
+ .today-main .hero .scope{overflow-wrap:anywhere}
+ .today-main .resume-card{padding:12px;gap:8px;margin-bottom:14px}
+ .today-main .resume-card .muted{font-size:14px;line-height:1.55}
+ .today-main .resume-card .button{min-height:48px}
+ .today-main .task-card{padding:16px 14px;min-height:196px}
+ .today-main .task-card .count{margin:8px 0 12px}
+}
+@media(max-width:760px) and (max-height:740px){
+ .today-main{padding-top:12px}
+ .today-main .page-header{margin-bottom:8px}
+ .today-main .hero{padding-bottom:12px}
+ .today-main .hero h1{font-size:28px}
+ .today-main .task-card{min-height:184px}
+}
