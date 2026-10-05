@@ -824,8 +824,120 @@ body[data-carnet-view=app] #app .main{animation:none}
 :root[data-motion=simple] .context-grid .context-card{transition:none}
 
 </style>
+<style data-bundled-source="startup.css">
+/* Independent of journey/app route visibility; tokens come from carnet-tokens. */
+html.startup-active,html.startup-active body{overflow:hidden!important}
+#startup-shell{position:fixed;inset:0;z-index:10000;overflow:auto;overscroll-behavior:contain;background:var(--bg,#F4F1E9);color:var(--ink,#25352F);padding:max(24px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-right)) max(24px,env(safe-area-inset-bottom)) max(24px,env(safe-area-inset-left));box-sizing:border-box;opacity:1;transition:opacity 200ms ease;isolation:isolate}
+.startup-page{max-width:420px;margin:0 auto;padding-top:max(20px,calc(47svh - 142px));padding-bottom:32px;text-align:center}
+.startup-brand{font:550 44px/1.3 'Songti SC','Noto Serif CJK SC',serif;letter-spacing:.025em;margin:0}
+.startup-wordmark{font:500 11px/1.5 system-ui,sans-serif;letter-spacing:.22em;margin:12px 0 32px}
+.startup-motto{font:italic 20px/1.5 Georgia,'Times New Roman',serif;margin:0 0 28px}
+.startup-ink{display:block;width:120px;height:1.5px;background:var(--accent,#245C4F);margin:0 auto 22px;opacity:0;transform-origin:left center}
+.startup-status{font:400 14px/1.6 system-ui,sans-serif;color:var(--muted,#647068);min-height:3.2em;margin:0}
+.startup-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:16px}
+#startup-shell button{font:inherit;font-size:14px;border:1px solid var(--accent);border-radius:10px;background:var(--bg);color:var(--ink);padding:10px 16px;cursor:pointer;min-height:44px}
+#startup-shell button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.startup-help{font:400 14px/1.6 system-ui,sans-serif;text-align:start;color:var(--muted);margin:20px 0 0}
+#startup-shell [hidden]{display:none!important}
+.startup-waiting .startup-ink{opacity:.8;animation:startup-breathe 1.8s ease-in-out infinite}
+.startup-waiting[data-motion=immersive] .startup-ink{animation:startup-ink-in 220ms ease-out, startup-breathe 1.8s ease-in-out 220ms infinite}
+.startup-static .startup-ink,#startup-shell[data-motion=reduced] .startup-ink{animation:none;transform:none}
+#startup-shell.startup-leaving{opacity:0;pointer-events:none}
+html.startup-active .carnet-loading{display:none!important}
+#carnet-scene-host[data-carnet-backend=simplified]{background:var(--bg)}
+body:has(#carnet-scene-host[data-carnet-backend=simplified]) :is(.carnet-caption.on-dark,.carnet-story-header,.carnet-story-footer){color:var(--ink);text-shadow:none}
+@keyframes startup-breathe{0%,100%{opacity:.68}50%{opacity:.94}}
+@keyframes startup-ink-in{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0)}}
+@media(max-width:600px){.startup-brand{font-size:32px}.startup-wordmark{font-size:10px;letter-spacing:.2em}.startup-motto{font-size:18px}.startup-ink{width:104px}.startup-status{font-size:13px}.startup-page{padding-top:max(20px,calc(47svh - 128px))}}
+@media(prefers-reduced-motion:reduce){#startup-shell{transition:none}.startup-ink{animation:none!important;transform:none!important}}
+
+</style>
 </head>
 <body data-carnet-view="journey">
+<section id="startup-shell" aria-label="Vocabulaire">
+ <div class="startup-page"><h1 class="startup-brand" lang="zh-CN">不背法语</h1><p class="startup-wordmark">VOCABULAIRE</p><p class="startup-motto" lang="fr">Un peu, chaque jour.</p><i class="startup-ink" aria-hidden="true"></i><p class="startup-status" role="status" aria-live="polite" aria-atomic="true"></p><div class="startup-actions"><button type="button" data-startup-action="fallback" hidden></button><button type="button" data-startup-action="reload" hidden></button><button type="button" data-startup-action="help" hidden></button></div><p class="startup-help" hidden></p><noscript><p>请开启 JavaScript 后重新载入。<br>Please enable JavaScript and reload.<br>Activez JavaScript et rechargez la page.</p></noscript></div>
+</section>
+<script data-bundled-source="startup.js">
+/* The title page follows real initialization. No archive reads, fake progress,
+   minimum viewing time, or shared ownership of the application's locks. */
+(() => {
+ 'use strict';
+ const root=document.documentElement,shell=document.getElementById('startup-shell');
+ if(!shell)return;
+ const template=shell.cloneNode(true),KEY='FR_VOCAB_STARTUP_HINT_V1',PREVIEW=window.CARNET_PREVIEW===true;
+ const TIMES=Object.freeze({INDICATOR_DELAY_MS:200,EXIT_DURATION_MS:200,EXIT_CLEANUP_GRACE_MS:100,SLOW_NOTICE_MS:3000,SCENE_FALLBACK_MS:6000,DATA_STILL_PENDING_MS:10000});
+ const state={active:true,removed:false,phase:'opening',dataReady:false,viewReady:false,target:null,backend:null,indicatorVisible:false,slow:false,pending:false,failed:false,startedAt:performance.now(),dataReadyAt:null,targetReadyAt:null,removedAt:null};
+ const dark=matchMedia('(prefers-color-scheme: dark)'),reduce=matchMedia('(prefers-reduced-motion: reduce)');
+ let appearance={version:1,design:'classic',mode:'light',motion:'immersive',language:'zh'},lastHint='',sceneElapsed=0,sceneStart=0,sceneTimer=0,exitTimer=0,falling=false,exiting=false,sceneGeneration=0,sceneEpoch=null,restoreFocus=false;
+ const timers=new Set(),locks=new Set();let release;
+ const whenRemoved=new Promise(resolve=>release=resolve);
+ const words={
+ opening:['正在打开你的学习空间…','Opening your learning space…','Ouverture de votre espace d’apprentissage…'],
+ 'loading-data':['正在读取你的学习记录…','Loading your learning records…','Chargement de vos données d’apprentissage…'],
+ portable:['正在准备便携快照…','Preparing the portable snapshot…','Préparation de l’instantané portable…'],
+ view:['正在准备学习界面…','Preparing your learning space…','Préparation de votre espace d’apprentissage…'],
+ scene:['正在准备书房…','Preparing your study…','Préparation de votre espace de lecture…'],
+ slow:['准备时间较长，请稍候。','This is taking a little longer. Please wait.','La préparation prend un peu plus de temps. Veuillez patienter.'],
+ 'slow-scene':['书房准备时间较长，可以先使用静态画面。','Your study is taking longer to prepare. You can use a static view.','La préparation prend plus de temps. Vous pouvez utiliser une vue statique.'],
+ pending:['学习记录仍未读取完成。请保留本页，或重新载入后重试。','Learning records are still loading. Keep this page open, or reload to try again.','Vos données sont toujours en cours de chargement. Gardez cette page ouverte ou rechargez-la.'],
+ failed:['未能完成启动。请重新载入；若仍有问题，请检查浏览器存储权限。','Startup could not finish. Reload; if the problem continues, check browser storage permissions.','Le démarrage a échoué. Rechargez la page ; si le problème persiste, vérifiez les autorisations de stockage.'],
+ fallback:['使用静态画面','Use a static view','Utiliser une vue statique'],reload:['重新载入','Reload','Recharger'],help:['查看帮助','Show help','Afficher l’aide'],
+ guidance:['请确认浏览器允许本站使用本地存储。不要清除浏览器数据；如果已有备份，可在网站恢复后导入。','Check that this site can use browser storage. Do not clear browser data. If you have a backup, you can import it after the site opens.','Vérifiez l’accès au stockage du navigateur. N’effacez pas ses données. Vous pourrez importer une sauvegarde après l’ouverture du site.']
+ };
+ const language=()=>/^en(?:-|$)/i.test(root.lang)?1:/^fr(?:-|$)/i.test(root.lang)?2:0;
+ const label=key=>words[key][language()];
+ const write=(el,value)=>{if(el&&el.textContent!==value)el.textContent=value;};
+ const hidden=(el,value)=>{if(el&&el.hidden!==value)el.hidden=value;};
+ function valid(value){return value&&Object.keys(value).length===5&&['version','design','mode','motion','language'].every(key=>Object.hasOwn(value,key))&&value.version===1&&['classic','atelier','verdure'].includes(value.design)&&['light','dark','system'].includes(value.mode)&&['immersive','standard','reduced','system'].includes(value.motion)&&['zh','en','fr'].includes(value.language)?{version:1,design:value.design,mode:value.mode,motion:value.motion,language:value.language}:null;}
+ function parse(raw){try{return typeof raw==='string'&&raw.length<=1024?valid(JSON.parse(raw)):null;}catch(_){return null;}}
+ function settingsHint(settings){return valid({version:1,design:settings?.designTheme,mode:settings?.theme,motion:['immersive','standard','reduced','system'].includes(settings?.carnetMotion)?settings.carnetMotion:settings?.motionMode==='simple'?'reduced':'system',language:settings?.language});}
+ const reduced=()=>reduce.matches||appearance.motion==='reduced';
+ function apply(){if(!state.active)return;root.dataset.theme=appearance.mode==='system'?(dark.matches?'dark':'light'):appearance.mode;root.dataset.designTheme=appearance.design;shell.dataset.motion=reduced()?'reduced':appearance.motion==='system'?'standard':appearance.motion;if(reduced()&&exiting)remove();}
+ // A portable file may supply pure appearance metadata; no embedded backup is read here.
+ const seed=parse(root.getAttribute('data-startup-hint'));root.removeAttribute('data-startup-hint');
+ let cached=null;if(!PREVIEW){try{const raw=localStorage.getItem(KEY);cached=parse(raw);if(cached)lastHint=JSON.stringify(cached);}catch(_){}}
+ if(seed||cached){appearance=seed||cached;root.lang=appearance.language==='zh'?'zh-CN':appearance.language;}
+ apply();
+ function syncHint(settings,{persist=true}={}){const next=settingsHint(settings);if(!next)return;appearance=next;if(state.active){apply();refresh();}if(PREVIEW||!persist)return;const value=JSON.stringify(next);if(value===lastHint)return;try{localStorage.setItem(KEY,value);lastHint=value;}catch(_){}}
+ function later(fn,delay){const id=setTimeout(()=>{timers.delete(id);fn();},delay);timers.add(id);return id;}
+ function lock(){for(const el of document.body.children){if(el.id==='carnet-reader'||!el.matches('#app,#carnet-scene-host,#carnet-story,#carnet-lessons,#carnet-components-preview,#carnet-preview-bar,.carnet-story-ui'))continue;if(!el.inert){el.inert=true;el.dataset.startupInert='';locks.add(el);}}}
+ root.classList.add('startup-active');lock();
+ const observer=new MutationObserver(records=>{if(!state.active)return;if(records.some(r=>r.type==='childList'))lock();if(records.some(r=>r.attributeName==='lang'))refresh();});
+ observer.observe(document.body,{childList:true});observer.observe(root,{attributes:true,attributeFilter:['lang']});
+ function refresh(){if(!state.active)return;if(shell.contains(document.activeElement))restoreFocus=true;const key=state.failed?'failed':state.pending&&!state.dataReady?'pending':state.slow?(state.phase==='scene'?'slow-scene':'slow'):state.phase;
+  write(shell.querySelector('.startup-status'),state.indicatorVisible?label(key):'');
+  const fallback=shell.querySelector('[data-startup-action=fallback]'),reload=shell.querySelector('[data-startup-action=reload]'),help=shell.querySelector('[data-startup-action=help]');
+  write(fallback,label('fallback'));write(reload,label('reload'));write(help,label('help'));write(shell.querySelector('.startup-help'),label('guidance'));
+  hidden(fallback,!(state.slow&&state.dataReady&&state.phase==='scene'&&!falling&&!state.failed));hidden(reload,!(state.failed||state.pending&&!state.dataReady));hidden(help,reload.hidden);
+  shell.classList.toggle('startup-waiting',state.indicatorVisible);shell.classList.toggle('startup-static',state.slow||state.failed);
+ }
+ function pauseScene(){clearTimeout(sceneTimer);sceneTimer=0;if(sceneStart){sceneElapsed+=performance.now()-sceneStart;sceneStart=0;}}
+ function armScene(){if(!state.active||state.phase!=='scene'||state.viewReady||falling||document.hidden)return;sceneStart=performance.now();sceneTimer=setTimeout(()=>{pauseScene();requestSceneFallback();},Math.max(0,TIMES.SCENE_FALLBACK_MS-sceneElapsed));}
+ async function requestSceneFallback(){if(!state.active||state.failed||!state.dataReady||state.phase!=='scene'||falling)return;falling=true;const generation=sceneGeneration;pauseScene();refresh();try{await window.VocabCarnetScene?.useStaticFallback();}catch(error){if(generation===sceneGeneration)fail(error);}finally{if(generation===sceneGeneration){falling=false;refresh();}}}
+ function setPhase(phase,scope={}){if(!state.active||state.failed||exiting||!['opening','loading-data','portable','view','scene'].includes(phase)||state.phase===phase&&(phase!=='scene'||sceneEpoch===(scope.sceneEpoch??null)))return;pauseScene();sceneGeneration++;falling=false;sceneEpoch=phase==='scene'?(scope.sceneEpoch??null):null;state.phase=phase;if(phase==='scene'){sceneElapsed=0;armScene();}refresh();}
+ function mark(name){try{performance.mark('startup:'+name);}catch(_){}}
+ function markDataReady({mode='normal'}={}){if(!state.active||state.failed||state.dataReady)return;state.dataReady=true;state.mode=mode;state.dataReadyAt=performance.now();mark('data-ready');setPhase('view');finish();}
+ function markViewReady({target,backend=null}={}){if(!state.active||state.failed||state.viewReady||!['today','recovery','journey','app'].includes(target)||['disposed','none'].includes(backend))return;state.viewReady=true;state.target=target;state.backend=backend;state.targetReadyAt=performance.now();mark('target-ready');pauseScene();finish();}
+ function stopWaiting(){for(const timer of timers)clearTimeout(timer);timers.clear();pauseScene();shell.classList.add('startup-static');}
+ function remove(){if(!state.active)return;stopWaiting();clearTimeout(exitTimer);observer.disconnect();dark.removeEventListener('change',apply);reduce.removeEventListener('change',apply);document.removeEventListener('visibilitychange',visibility);shell.removeEventListener('click',click);shell.removeEventListener('transitionend',transition);
+  const focused=shell.contains(document.activeElement)||restoreFocus&&(document.activeElement===document.body||document.activeElement===root);for(const el of locks){if(el.hasAttribute('data-startup-inert')){el.inert=false;delete el.dataset.startupInert;}}locks.clear();root.classList.remove('startup-active');shell.remove();state.active=false;state.removed=true;state.removedAt=performance.now();mark('removed');
+  if(focused&&!document.querySelector('dialog[open]')){const target=document.querySelector(state.target==='journey'?'#carnet-title':'#app h1');if(target){const old=target.getAttribute('tabindex');target.tabIndex=-1;target.focus({preventScroll:true});if(old===null)target.addEventListener('blur',()=>{if(target.getAttribute('tabindex')==='-1')target.removeAttribute('tabindex');},{once:true});else target.setAttribute('tabindex',old);}}
+  release();window.dispatchEvent(new Event('vocab-startup-ready'));
+ }
+ function finish(){if(!state.active||state.failed||!state.dataReady||!state.viewReady||exiting)return;exiting=true;stopWaiting();if(!state.indicatorVisible||reduced()||document.hidden){remove();return;}shell.classList.add('startup-leaving');exitTimer=setTimeout(remove,TIMES.EXIT_DURATION_MS+TIMES.EXIT_CLEANUP_GRACE_MS);}
+ function transition(e){if(exiting&&e.target===shell&&e.propertyName==='opacity')remove();}
+ function fail(error){if(!state.active||state.failed||exiting)return;stopWaiting();state.failed=true;state.phase='failed';state.indicatorVisible=true;console.error('[VocabStartup]',error);refresh();}
+ function visibility(){pauseScene();if(document.hidden&&exiting)remove();else if(!document.hidden)armScene();}
+ function click(e){const action=e.target.closest('[data-startup-action]')?.dataset.startupAction;if(action==='reload')location.reload();else if(action==='fallback')requestSceneFallback();else if(action==='help')hidden(shell.querySelector('.startup-help'),false);}
+ function resetClone(clone,settings){clone.querySelectorAll('#startup-shell').forEach(el=>el.remove());clone.classList.remove('startup-active');clone.querySelectorAll('[data-startup-inert]').forEach(el=>{el.removeAttribute('inert');el.removeAttribute('data-startup-inert');});const hint=settingsHint(settings);if(hint)clone.setAttribute('data-startup-hint',JSON.stringify(hint));const body=clone.querySelector('body');body.prepend(template.cloneNode(true));}
+ shell.addEventListener('click',click);shell.addEventListener('transitionend',transition);document.addEventListener('visibilitychange',visibility);dark.addEventListener('change',apply);reduce.addEventListener('change',apply);
+ later(()=>{if(!state.active||exiting)return;state.indicatorVisible=true;refresh();},TIMES.INDICATOR_DELAY_MS);
+ later(()=>{if(!state.active||exiting)return;state.slow=true;refresh();},TIMES.SLOW_NOTICE_MS);
+ later(()=>{if(!state.active||exiting)return;state.pending=true;refresh();},TIMES.DATA_STILL_PENDING_MS);
+ window.VocabStartup=Object.freeze({TIMES,setPhase,markDataReady,markViewReady,fail,isActive:()=>state.active,getState:()=>({...state}),whenRemoved,syncHint,resetClone,requestSceneFallback});
+})();
+
+</script>
 <div id="carnet-scene-host"></div>
 <div id="app"><div class="boot">Vocabulaire <span>正在打开你的学习空间…</span></div></div>
 <dialog id="modal" aria-labelledby="modal-title"><header><h2 id="modal-title"></h2><button type="button" id="modal-close" class="icon-button" aria-label="关闭">×</button></header><div id="modal-toast" role="status" aria-live="polite" hidden></div><div id="modal-body"></div><footer id="modal-footer"></footer></dialog>
@@ -5867,7 +5979,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (host.CARNET_PREVIEW === true && motions.includes(savedMotion)) host.VocabCarnetPreview?._setMotion(savedMotion);
       resolveReady(bridge);
     },
-    _fail(error) { rejectReady(error); }
+    _fail(error) { host.VocabStartup?.fail(error); rejectReady(error); }
   };
   host.VocabCarnetProduct = Object.freeze(bridge);
 })(window);
@@ -6499,7 +6611,7 @@ window.VocabContextTilt = Object.freeze({ reset });
  let observer=null;
  const reduced=()=>window.VocabMotion?.isReduced()??matchMedia('(prefers-reduced-motion:reduce)').matches;
  const visible=node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight};
- const appVisible=()=>document.body.dataset.carnetView==='app';
+ const appVisible=()=>document.body.dataset.carnetView==='app'&&!window.VocabStartup?.isActive();
  function animate(node,frames,options){const a=window.VocabMotion?.animate(node,frames,options);if(a){animations.add(a);a.finished.then(()=>animations.delete(a),()=>animations.delete(a))}return a}
  function title(node){
   if(!node||seen.has('title')||!visible(node)||!appVisible())return;
@@ -6540,6 +6652,7 @@ window.VocabContextTilt = Object.freeze({ reset });
  // Finishing the guide exposes an already-rendered app. Wait for that hand-off
  // so an invisible first render cannot consume the one-time title reveal.
  new MutationObserver(()=>{const view=window.VocabApp?.getView();window.VocabSmoothScroll?.refresh(view);if(appVisible())refresh(view)}).observe(document.body,{attributes:true,attributeFilter:['data-carnet-view']});
+ window.addEventListener('vocab-startup-ready',()=>refresh(window.VocabApp?.getView()),{once:true});
  window.addEventListener('vocab-motionchange',settle);window.addEventListener('pagehide',settle);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)settle()});
  window.VocabEditorialMotion=Object.freeze({beforeRender:settle,refresh});
@@ -7347,6 +7460,7 @@ window.VocabCarnetSceneAssets={"classic-light":{"desktop":{"room":{"width":1440,
  const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
  const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
  const lerp=(a,b,t)=>a+(b-a)*t;
+ const STATIC_READY_TIMEOUT_MS=2000;
  let instance=null,progress=0,appearance={design:'classic',mode:'light',motion:'standard'};
  const BOOK={x:1.02,z:-.68,width:3.20,depth:4.55,top:.385};
  const INK={x:-5.48,z:.932,y:.059,width:5.76,height:1.536,bottle:{x:-5.95,y:.90,z:.1}};
@@ -7357,13 +7471,18 @@ window.VocabCarnetSceneAssets={"classic-light":{"desktop":{"room":{"width":1440,
  function seeded(seed=1){return()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646}}
  function create(host,options={}){
   const T=window.THREE;let scene,camera,renderer,root,wood,cloth,paper,coverTexture,pageTexture,inkTexture,pen,inkPlane,frontPivot,frontCover,bookGroup,topPage,bookBack,spine,spot,dayLight,ambient,windowLight,windowGlass,lampGlow,readShadow;
-  let frame=0,disposed=false,suspended=false,width=1,height=1,readyResolve,readyReject,backend='static',contextLost=false,actual=0,lastInk=-1,coverAngle=0,pageCurve=0,inkSample=null;
-  const resources=new Set(),flips=[],cleanup=[],staticView=document.createElement('img');
-  const ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject});
+  let frame=0,disposed=false,suspended=false,width=1,height=1,readyResolve,settled=false,backend='pending',contextLost=false,actual=0,lastInk=-1,coverAngle=0,pageCurve=0,inkSample=null;
+  let workEpoch=0,prepared=false,forcedStatic=false,fallbackPromise=null,imageRequest=null,presentation='pending';
+  const resources=new Set(),flips=[],cleanup=[],webglCleanup=[],preparationFrames=new Map(),staticView=document.createElement('img'),originalBackground=host.style.backgroundColor;
+  const ready=new Promise(resolve=>{readyResolve=resolve});
+  const valid=epoch=>!disposed&&!forcedStatic&&epoch===workEpoch;
+  const finish=result=>{if(!settled){settled=true;readyResolve(disposed?{backend:'disposed'}:result)}return result};
+  function preparationFrame(){return new Promise(resolve=>{const id=requestAnimationFrame(()=>{preparationFrames.delete(id);resolve(true)});preparationFrames.set(id,()=>resolve(false))})}
+  function cancelPreparation(){workEpoch++;for(const [id,cancel]of preparationFrames){cancelAnimationFrame(id);cancel()}preparationFrames.clear()}
   const track=x=>(resources.add(x),x);
-  const report=v=>{try{options.onProgress?.(v)}catch(_){}};
+  const report=v=>{if(!disposed)try{options.onProgress?.(v)}catch(_){}};
   staticView.className='carnet-scene-static';staticView.alt='';staticView.setAttribute('aria-hidden','true');Object.assign(staticView.style,{position:'absolute',inset:'0',width:'100%',height:'100%',objectFit:'cover',display:'none',pointerEvents:'none'});host.append(staticView);host.setAttribute('aria-hidden','true');
-  const add=(el,event,fn,opts)=>{el.addEventListener(event,fn,opts);cleanup.push(()=>el.removeEventListener(event,fn,opts))};
+  const add=(el,event,fn,opts,list=cleanup)=>{el.addEventListener(event,fn,opts);list.push(()=>el.removeEventListener(event,fn,opts))};
   function texture(c){const t=track(new T.CanvasTexture(c));t.colorSpace=T.SRGBColorSpace;t.anisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),8);return t}
   function paperCanvas(w=1024,h=1024){const c=canvas(w,h),ctx=c.getContext('2d'),rand=seeded(7),d=ctx.createImageData(w,h);for(let i=0;i<d.data.length;i+=4){const n=(rand()-.5)*5;d.data[i]=247+n;d.data[i+1]=243+n;d.data[i+2]=232+n;d.data[i+3]=255}ctx.putImageData(d,0,0);ctx.strokeStyle='rgba(125,111,84,.026)';ctx.lineWidth=.6;for(let i=0;i<900;i++){const x=rand()*w,y=rand()*h;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+3+rand()*8,y+(rand()-.5)*2);ctx.stroke()}return c}
   function woodCanvas(){const c=canvas(2048,1024),ctx=c.getContext('2d'),rand=seeded(19),d=ctx.createImageData(c.width,c.height);for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;const wave=y+Math.sin(x*.002+y*.011)*12+Math.sin(x*.01)*3;const grain=Math.sin(wave*.62)*.6+Math.sin(wave*.19)*1.6+Math.sin(wave*.045)*2.0+(rand()-.5)*4;const plank=Math.floor(y/255);d.data[i]=137+grain*.8-plank%2*2;d.data[i+1]=118+grain*.65-plank%2*2;d.data[i+2]=93+grain*.48;d.data[i+3]=255}ctx.putImageData(d,0,0);ctx.strokeStyle='rgba(40,28,16,.25)';ctx.lineWidth=1;[256,512,768].forEach(y=>{ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(2048,y);ctx.stroke()});for(let i=0;i<135;i++){const y=rand()*1024;ctx.strokeStyle=`rgba(58,37,21,${.03+rand()*.07})`;ctx.lineWidth=.4+rand()*.7;ctx.beginPath();for(let x=0;x<=2048;x+=32){const yy=y+Math.sin(x*.003+y)*7+Math.sin(x*.009+y*.1)*1.3;x?ctx.lineTo(x,yy):ctx.moveTo(x,yy)}ctx.stroke()}return c}
@@ -7451,25 +7570,59 @@ window.VocabCarnetSceneAssets={"classic-light":{"desktop":{"room":{"width":1440,
    topPage.material.map=q>=.82?topPage.material.userData.blank:pageTexture;readShadow.visible=open>.83;
   }
   function staticAsset(){const assets=window.VocabCarnetSceneAssets;if(!assets)return null;const key=appearance.design+'-'+appearance.mode,kind=width/height<.85?'mobile':'desktop',stage=progress<1?'room':progress<2?'paper':'book';return assets[key]?.[kind]?.[stage]||assets['classic-'+appearance.mode]?.[kind]?.[stage]||assets['classic-light']?.[kind]?.[stage]||null}
-  function showStatic(){const asset=staticAsset();if(asset){if(staticView.src!==asset.src)staticView.src=asset.src;staticView.style.display='block';}host.dataset.carnetBackend='static';if(renderer)renderer.domElement.style.display='none';backend='static';return !!asset}
-  function draw(){if(disposed||suspended||document.hidden)return;if(!renderer||contextLost){showStatic();return;}if(reduced()){if(showStatic())return;}
-   renderer.domElement.style.display='block';staticView.style.display='none';backend='webgl';host.dataset.carnetBackend='webgl';const p=reduced()?(progress<1?0:progress<2?1.91:3):progress;update(p);renderer.render(scene,camera);
+  function paintStatic(result){if(disposed||presentation!=='static')return;backend=result.backend;host.dataset.carnetBackend=backend;staticView.style.display=backend==='static'?'block':'none';host.style.backgroundColor=backend==='simplified'?'var(--bg)':originalBackground;if(renderer)renderer.domElement.style.display='none'}
+  function showStatic(){
+   if(disposed)return Promise.resolve({backend:'disposed'});
+   presentation='static';const asset=staticAsset();
+   if(!asset?.src){const result={backend:'simplified',reason:'static-unavailable'};imageRequest?.cancel(result);imageRequest=null;paintStatic(result);return Promise.resolve(result)}
+   if(imageRequest?.src===asset.src){paintStatic(imageRequest.result||{backend:'pending'});return imageRequest.promise}
+   const previous=imageRequest;let resolve,timer=0,done=false;
+   const request={src:asset.src,result:null,promise:new Promise(done=>{resolve=done}),cancel:null};imageRequest=request;
+   const cleanupImage=()=>{clearTimeout(timer);staticView.removeEventListener('load',loaded);staticView.removeEventListener('error',failed)};
+   const complete=result=>{if(done)return;done=true;cleanupImage();request.result=result;if(imageRequest===request)paintStatic(result);resolve(result)};
+   request.cancel=result=>{if(done)return;done=true;cleanupImage();resolve(result)};
+   const failed=()=>complete({backend:'simplified',reason:'static-load-failed'});
+   const loaded=()=>{if(done||disposed||imageRequest!==request)return;if(!staticView.naturalWidth){failed();return}let decoded;try{decoded=staticView.decode?.()}catch(_){complete({backend:'simplified',reason:'static-decode-failed'});return}Promise.resolve(decoded).then(()=>{if(!done&&!disposed&&imageRequest===request)complete({backend:'static'})},()=>complete({backend:'simplified',reason:'static-decode-failed'}))};
+   // A changed theme, orientation or chapter replaces the pending image. Older
+   // callers follow its replacement, rather than releasing an obsolete view.
+   previous?.cancel(request.promise);paintStatic({backend:'pending'});
+   staticView.addEventListener('load',loaded);staticView.addEventListener('error',failed);
+   timer=setTimeout(()=>complete({backend:'simplified',reason:'static-timeout'}),STATIC_READY_TIMEOUT_MS);
+   staticView.src=asset.src;if(staticView.complete)loaded();
+   return request.promise;
   }
-  function requestDraw(){if(!frame&&!disposed&&!suspended&&!document.hidden)frame=requestAnimationFrame(()=>{frame=0;try{draw()}catch(e){console.warn('Carnet scene could not render; using its photographed keyframe.',e);showStatic()}})}
-  function resize(){const r=host.getBoundingClientRect();width=Math.max(1,r.width||innerWidth);height=Math.max(1,r.height||innerHeight);if(renderer){renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.65));renderer.setSize(width,height,false);}if(backend==='static')showStatic();requestDraw()}
+  function disposeWebGL(){
+   const release=fn=>{try{fn()}catch(error){console.warn('Carnet scene resource could not be released.',error)}};
+   webglCleanup.splice(0).forEach(release);resources.forEach(r=>release(()=>r.dispose?.()));resources.clear();
+   if(renderer){const old=renderer;renderer=null;release(()=>old.dispose());release(()=>old.forceContextLoss());old.domElement.remove()}
+   scene=camera=root=wood=cloth=paper=coverTexture=pageTexture=inkTexture=pen=inkPlane=frontPivot=frontCover=bookGroup=topPage=bookBack=spine=spot=dayLight=ambient=windowLight=windowGlass=lampGlow=readShadow=null;flips.length=0;prepared=false;
+  }
+  function useStaticFallback(){
+   if(disposed)return Promise.resolve({backend:'disposed'});
+   if(fallbackPromise)return fallbackPromise;
+   forcedStatic=true;cancelPreparation();cancelAnimationFrame(frame);frame=0;disposeWebGL();
+   fallbackPromise=showStatic().then(result=>{if(disposed)return {backend:'disposed'};report(1);finish(result);return disposed?{backend:'disposed'}:result});
+   return fallbackPromise;
+  }
+  function draw(initial=false){if(disposed)return {backend:'disposed'};if(!initial&&(suspended||document.hidden))return null;if(forcedStatic||contextLost)return showStatic();if(!prepared)return null;if(reduced()&&staticAsset())return showStatic();
+   presentation='webgl';host.style.backgroundColor=originalBackground;renderer.domElement.style.display='block';staticView.style.display='none';backend='webgl';host.dataset.carnetBackend='webgl';const p=reduced()?(progress<1?0:progress<2?1.91:3):progress;update(p);renderer.render(scene,camera);return {backend:'webgl'};
+  }
+  function requestDraw(){if(!frame&&!disposed&&!suspended&&!document.hidden)frame=requestAnimationFrame(()=>{frame=0;try{draw()}catch(e){console.warn('Carnet scene could not render; using its photographed keyframe.',e);useStaticFallback()}})}
+  function resize(){const r=host.getBoundingClientRect();width=Math.max(1,r.width||innerWidth);height=Math.max(1,r.height||innerHeight);if(renderer){renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.65));renderer.setSize(width,height,false);}if(presentation==='static')showStatic();requestDraw()}
   function screenPoint(v){const p=new T.Vector3(...v).applyMatrix4(bookGroup.matrixWorld).project(camera),r=host.getBoundingClientRect();return{x:r.left+(p.x+1)*width/2,y:r.top+(1-p.y)*height/2}}
   function getBookRect(){if(renderer&&scene&&backend==='webgl'){bookGroup.updateMatrixWorld(true);const quad=[[.16,BOOK.top+.004,-2.03],[3.02,BOOK.top+.004,-2.03],[3.02,BOOK.top+.004,2.03],[.16,BOOK.top+.004,2.03]].map(screenPoint);const xs=quad.map(p=>p.x),ys=quad.map(p=>p.y),x=Math.min(...xs),y=Math.min(...ys),w=Math.max(...xs)-x,h=Math.max(...ys)-y;return{rightPage:{x,y,width:w,height:h,left:x,top:y,right:x+w,bottom:y+h,quad},stable:progress>=2.99,progress};}
    const asset=staticAsset(),r=host.getBoundingClientRect();if(asset?.rect){const scale=Math.max(width/asset.width,height/asset.height),ox=r.left+(width-asset.width*scale)/2,oy=r.top+(height-asset.height*scale)/2,a=asset.rect;return{rightPage:{x:ox+a.x*scale,y:oy+a.y*scale,width:a.width*scale,height:a.height*scale},stable:progress>=2,progress};}return{rightPage:{x:r.left+width*.53,y:r.top+height*.19,width:width*.30,height:height*.62},stable:progress>=2.99,progress};}
   function suspend(value){suspended=!!value;if(suspended){cancelAnimationFrame(frame);frame=0}else requestDraw()}
-  function destroy(){if(disposed)return;disposed=true;cancelAnimationFrame(frame);cleanup.forEach(fn=>fn());resources.forEach(r=>r.dispose?.());renderer?.dispose();renderer?.forceContextLoss();renderer?.domElement.remove();staticView.remove();readyResolve({backend:'disposed'});delete host.dataset.carnetBackend;}
+  function destroy(){if(disposed)return;disposed=true;finish({backend:'disposed'});cancelPreparation();cancelAnimationFrame(frame);frame=0;cleanup.forEach(fn=>fn());imageRequest?.cancel({backend:'disposed'});imageRequest=null;disposeWebGL();staticView.remove();host.style.backgroundColor=originalBackground;delete host.dataset.carnetBackend;}
   add(window,'resize',resize,{passive:true});add(document,'visibilitychange',()=>{if(!document.hidden)requestDraw();else{cancelAnimationFrame(frame);frame=0}});add(media,'change',requestDraw);
   const observer=window.ResizeObserver?new ResizeObserver(resize):null;observer?.observe(host);cleanup.push(()=>observer?.disconnect());resize();report(.04);
-  requestAnimationFrame(async()=>{if(disposed)return;try{if(!T)throw new Error('Bundled Three unavailable');renderer=new T.WebGLRenderer({alpha:false,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;Object.assign(renderer.domElement.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});renderer.domElement.className='carnet-scene-canvas';renderer.domElement.setAttribute('aria-hidden','true');host.append(renderer.domElement);add(renderer.domElement,'webglcontextlost',e=>{if(disposed)return;e.preventDefault();contextLost=true;showStatic()});add(renderer.domElement,'webglcontextrestored',()=>{if(disposed)return;contextLost=false;requestDraw()});
-   scene=new T.Scene();camera=new T.PerspectiveCamera(43,width/height,.035,100);root=new T.Group();scene.add(root);buildEnvironment();buildRoom();report(.36);await new Promise(r=>requestAnimationFrame(r));if(disposed)return;buildPaperAndInk();report(.59);buildBook();setLighting();resize();update(progress);renderer.compile(scene,camera);report(.93);draw();report(1);readyResolve({backend});
-  }catch(e){showStatic();report(1);readyResolve({backend:'static',reason:e.message});}});
-  return {host,ready,resize,suspend,destroy,setProgress(){requestDraw()},setAppearance(){setLighting();lastInk=-1;requestDraw()},getBookRect,capture(){if(renderer&&backend==='webgl'){draw();return renderer.domElement.toDataURL('image/png')}return staticView.src||null},__getDebugState(){return {backend,progress,actual,coverAngle,pageCurve,camera:camera?.position.toArray(),target:cameraPose(actual).look,pen:pen?.position.toArray(),penVisible:pen?.visible,ink:inkSample,inkBounds:{...INK},book:BOOK,appearance:{...appearance},suspended,width,height}}};
+  const epoch=workEpoch;
+  preparationFrame().then(async active=>{if(!active||!valid(epoch))return;try{if(!T)throw new Error('Bundled Three unavailable');renderer=new T.WebGLRenderer({alpha:false,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});if(!valid(epoch)){disposeWebGL();return}renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;Object.assign(renderer.domElement.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});renderer.domElement.className='carnet-scene-canvas';renderer.domElement.setAttribute('aria-hidden','true');host.append(renderer.domElement);add(renderer.domElement,'webglcontextlost',e=>{if(disposed||forcedStatic)return;e.preventDefault();contextLost=true;showStatic()},undefined,webglCleanup);add(renderer.domElement,'webglcontextrestored',()=>{if(disposed||forcedStatic)return;contextLost=false;requestDraw()},undefined,webglCleanup);
+   scene=new T.Scene();camera=new T.PerspectiveCamera(43,width/height,.035,100);root=new T.Group();scene.add(root);buildEnvironment();buildRoom();report(.36);if(!valid(epoch)||!await preparationFrame()||!valid(epoch))return;buildPaperAndInk();report(.59);if(!valid(epoch))return;buildBook();setLighting();prepared=true;resize();update(progress);renderer.compile(scene,camera);report(.93);if(!valid(epoch))return;const result=await draw(true);if(!valid(epoch))return;report(1);finish(result);
+  }catch(e){if(valid(epoch)){console.warn('Carnet scene could not prepare; using its photographed keyframe.',e);useStaticFallback()}}});
+  return {host,ready,resize,suspend,destroy,useStaticFallback,setProgress(){requestDraw()},setAppearance(){setLighting();lastInk=-1;if(presentation==='static')showStatic();requestDraw()},getBookRect,capture(){if(renderer&&backend==='webgl'){draw();return renderer.domElement.toDataURL('image/png')}return backend==='static'?staticView.src:null},__getDebugState(){return {backend,progress,actual,coverAngle,pageCurve,camera:camera?.position.toArray(),target:cameraPose(actual).look,pen:pen?.position.toArray(),penVisible:pen?.visible,ink:inkSample,inkBounds:{...INK},book:BOOK,appearance:{...appearance},suspended,width,height}}};
  }
- const api={mount(host,options={}){if(typeof host==='string')host=document.querySelector(host);if(!host)return Promise.resolve({backend:'none'});if(instance?.host===host){instance.resize();return instance.ready}instance?.destroy();instance=create(host,options);api.ready=instance.ready;return instance.ready},setProgress(p){const next=clamp(Number(p)||0,0,3);if(next===progress)return;progress=next;instance?.setProgress()},setAppearance(a={}){if(a.motion)configuredMotion=true;appearance={...appearance,...a};instance?.setAppearance()},resize(){instance?.resize()},suspend(value){instance?.suspend(value)},destroy(){instance?.destroy();instance=null;progress=0},getBookRect(){return instance?.getBookRect()||null},capture(){return instance?.capture()||null},__getDebugState(){return instance?.__getDebugState()||{backend:'none',progress,appearance}},ready:Promise.resolve({backend:'none'})};
+ const api={mount(host,options={}){if(typeof host==='string')host=document.querySelector(host);if(!host)return Promise.resolve({backend:'none'});if(instance?.host===host){instance.resize();return instance.ready}instance?.destroy();instance=create(host,options);api.ready=instance.ready;return instance.ready},useStaticFallback(){return instance?.useStaticFallback()||Promise.resolve({backend:'none'})},setProgress(p){const next=clamp(Number(p)||0,0,3);if(next===progress)return;progress=next;instance?.setProgress()},setAppearance(a={}){if(a.motion)configuredMotion=true;appearance={...appearance,...a};instance?.setAppearance()},resize(){instance?.resize()},suspend(value){instance?.suspend(value)},destroy(){instance?.destroy();instance=null;progress=0},getBookRect(){return instance?.getBookRect()||null},capture(){return instance?.capture()||null},__getDebugState(){return instance?.__getDebugState()||{backend:'none',progress,appearance}},ready:Promise.resolve({backend:'none'})};
  window.VocabCarnetScene=api;
 })();
 
@@ -7479,7 +7632,7 @@ window.VocabCarnetSceneAssets={"classic-light":{"desktop":{"room":{"width":1440,
   'use strict';
   const FORMAL = Object.freeze({
     databases: ['FR_VOCAB_DATA_V4', 'FR_VOCAB_MEDIA_V4'],
-    keys: ['FR_VOCAB_APP_V4', 'FR_VOCAB_APP_V4_SNAPSHOT', 'FR_VOCAB_APP_V2', 'FR_VOCAB_APP_V2_SNAPSHOT', 'FR_VOCAB_INTERFACE_LANGUAGE'],
+    keys: ['FR_VOCAB_APP_V4', 'FR_VOCAB_APP_V4_SNAPSHOT', 'FR_VOCAB_APP_V2', 'FR_VOCAB_APP_V2_SNAPSHOT', 'FR_VOCAB_INTERFACE_LANGUAGE', 'FR_VOCAB_STARTUP_HINT_V1'],
     prefixes: ['FR_VOCAB_APP_V2_WORDS_']
   });
   const EXPERIMENTAL = Object.freeze({
@@ -7664,7 +7817,7 @@ function change(fn,{renderAfter=true,snapshot=false,guard=null,recover=false,req
   if(resetInProgress||guard&&!guard(state))return false;
   const revision=state.revision;let next=D.cloneForChange?D.cloneForChange(state):clone(state),result=await fn(next);
   if(result===false)return false;if(result&&result.version===4)next=result;
-  const saved=await D.save(next,{expectedRevision:revision,snapshot,recover});if(requirePersistent&&!saved.persistent)throw new Error(saved.warning||t('未能保存到浏览器，请重试。','Could not save in this browser. Try again.','Enregistrement impossible. Réessayez.'));state=saved.state;storage=saved;window.__vocabState=state;
+  const saved=await D.save(next,{expectedRevision:revision,snapshot,recover});if(requirePersistent&&!saved.persistent)throw new Error(saved.warning||t('未能保存到浏览器，请重试。','Could not save in this browser. Try again.','Enregistrement impossible. Réessayez.'));state=saved.state;storage=saved;window.__vocabState=state;if(saved.persistent&&!saved.blocked)window.VocabStartup?.syncHint(state.settings);
   if(renderAfter)render();syncSaveWarning();if(!saved.persistent)toast(unsavedMessage());return true;
  }catch(error){report(error);return false}finally{pendingChanges--;busy=pendingChanges>0}};
  const operation=changeQueue.then(run,run);changeQueue=operation.then(()=>undefined,()=>undefined);return operation;
@@ -8135,7 +8288,7 @@ async function exportBackup(full=false){await flushDraft();await changeQueue;con
 let pendingRestore=null;
 async function prepareRestore(file,portable=false){if(!file)return;let raw;if(portable)raw=file;else{if(file.size>230*1024*1024)throw new Error(t('备份过大','Backup too large','Sauvegarde trop volumineuse'));raw=JSON.parse(await file.text())}if(!raw||typeof raw!=='object'||(raw.media!==undefined&&!Array.isArray(raw.media)))throw new Error(t('备份格式无效','Invalid backup','Sauvegarde invalide'));const next=D.migrate(raw.state?{version:raw.version,state:raw.state}:raw,{designThemeFallback:designTheme()});E.ensureState(next);pendingRestore={state:next,media:raw.media||[],portable};openModal(t('预览备份恢复','Preview restore','Prévisualiser la restauration'),'<p>'+t('即将恢复','Ready to restore','Prêt à restaurer')+' <strong>'+next.decks.length+'</strong> '+t('个词表','decks','listes')+' / <strong>'+next.decks.reduce((n,d)=>n+d.words.length,0)+'</strong> '+t('个词条','words','mots')+'</p><p class="muted" style="margin:15px 0">'+(next.migration?t('包含词表、学习进度和复习安排。','Includes your word lists, progress and review schedule.','Contient vos listes, votre progression et votre calendrier de révision.'):t('包含学习进度与当前任务。','Includes progress and the current session.','Inclut la progression et la session actuelle.'))+'</p><p>'+pendingRestore.media.length+' '+t('条内含音频','embedded recordings','enregistrements inclus')+'</p><div class="note" style="margin-top:16px">'+t('恢复将替换当前词库和进度，并保留恢复前快照。请先导出当前备份。','Restoring replaces current words and progress and keeps a previous snapshot. Export your current backup first.','La restauration remplace les mots et la progression et conserve un instantané. Exportez d’abord votre sauvegarde actuelle.')+'</div>',(state.decks.length?btn(t('先备份当前数据','Back up current data','Sauvegarder les données actuelles'),'backup-full'):'')+btn(t('取消','Cancel','Annuler'),'close')+btn(t('确认恢复','Restore','Restaurer'),'commit-restore','primary'))}
 async function commitRestore(){if(!pendingRestore||pendingRestore.restoring)return false;const payload=pendingRestore;payload.restoring=true;try{const ok=await change(async()=>{const incoming=clone(payload.state);incoming.settings.onboardingComplete=true;await restoreStateMedia(incoming,payload.media);return incoming},{snapshot:true,recover:true,requirePersistent:true,renderAfter:false});if(!ok)return false;pendingRestore=null;stopAudio();clearOnboarding();view='today';selectedDeck='';resetSettingsDraft();closeModal();render();savedToast(t('备份已恢复','Backup restored','Sauvegarde restaurée'));return true}finally{payload.restoring=false}}
-async function portableExport(){await flushDraft();await changeQueue;toast(t('正在生成便携文件…','Building portable file…','Création du fichier portable…'));const payload=D.exportBackup(state);payload.media=await A.exportMedia(audioReferences(payload.state));payload.mediaIncluded=true;if(CARNET)payload.carnetAppearance=(window.VocabCarnetProduct||window.VocabCarnetPreview).getAppearance();const root=document.documentElement.cloneNode(true);if(CARNET){
+async function portableExport(){await window.VocabStartup?.whenRemoved;await flushDraft();await changeQueue;toast(t('正在生成便携文件…','Building portable file…','Création du fichier portable…'));const payload=D.exportBackup(state);payload.media=await A.exportMedia(audioReferences(payload.state));payload.mediaIncluded=true;if(CARNET)payload.carnetAppearance=(window.VocabCarnetProduct||window.VocabCarnetPreview).getAppearance();const root=document.documentElement.cloneNode(true);if(CARNET){
  // A portable review starts with clean UI and restores its snapshot to memory.
  // Generated scene canvases and review controls must not be cloned a second time.
  root.querySelectorAll('#carnet-preview-bar,#carnet-story,.carnet-story-ui,#carnet-appearance,#carnet-components-preview,#carnet-lessons,#carnet-product-bar').forEach(el=>el.remove());
@@ -8143,7 +8296,7 @@ async function portableExport(){await flushDraft();await changeQueue;toast(t('�
  root.querySelector('body').dataset.carnetView='journey';
  for(const name of [...root.classList])if(name.includes('study-viewport')||name==='keyboard-open')root.classList.remove(name);
  root.style.removeProperty('--visual-top');
-}for(const name of [...root.classList])if(name==='lenis'||name.startsWith('lenis-')||name==='vocab-smooth-scroll')root.classList.remove(name);root.querySelector('#portable-state')?.remove();root.querySelector('#app').innerHTML='<div class="boot">Vocabulaire</div>';root.querySelector('#modal').removeAttribute('open');root.querySelector('#modal-body').innerHTML='';root.querySelector('#modal-footer').innerHTML='';root.querySelector('#modal-toast').hidden=true;root.querySelector('#modal-toast').textContent='';root.querySelector('#toast').className='';root.querySelector('#toast').textContent='';root.querySelector('#audio-status').className='';root.querySelector('#audio-status').textContent='';root.querySelector('#toast').after(root.querySelector('#audio-status'));root.querySelector('body').className='';const script=document.createElement('script');script.type='application/json';script.id='portable-state';script.textContent=JSON.stringify(payload).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');const boot=root.querySelector('script[data-bundled-source="app.js"]');if(!boot)throw new Error(t('请从单文件正式版本导出便携文件','Use the standalone release to export portable HTML','Utilisez la version HTML autonome'));boot.before(script);download(RELEASE?'不背法语-'+RELEASE+'-便携快照.html':PREVIEW?'不背法语-CARNET-便携预览.html':CARNET?'不背法语-CARNET-便携快照.html':'不背法语-ATELIER-便携快照.html','<!doctype html>\n'+root.outerHTML,'text/html');toast(t('便携 HTML 已生成','Portable HTML ready','HTML portable prêt'))}
+}for(const name of [...root.classList])if(name==='lenis'||name.startsWith('lenis-')||name==='vocab-smooth-scroll')root.classList.remove(name);root.querySelector('#portable-state')?.remove();root.querySelector('#app').innerHTML='<div class="boot">Vocabulaire</div>';root.querySelector('#modal').removeAttribute('open');root.querySelector('#modal-body').innerHTML='';root.querySelector('#modal-footer').innerHTML='';root.querySelector('#modal-toast').hidden=true;root.querySelector('#modal-toast').textContent='';root.querySelector('#toast').className='';root.querySelector('#toast').textContent='';root.querySelector('#audio-status').className='';root.querySelector('#audio-status').textContent='';root.querySelector('#toast').after(root.querySelector('#audio-status'));root.querySelector('body').className='';window.VocabStartup?.resetClone(root,state.settings);const script=document.createElement('script');script.type='application/json';script.id='portable-state';script.textContent=JSON.stringify(payload).replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026');const boot=root.querySelector('script[data-bundled-source="app.js"]');if(!boot)throw new Error(t('请从单文件正式版本导出便携文件','Use the standalone release to export portable HTML','Utilisez la version HTML autonome'));boot.before(script);download(RELEASE?'不背法语-'+RELEASE+'-便携快照.html':PREVIEW?'不背法语-CARNET-便携预览.html':CARNET?'不背法语-CARNET-便携快照.html':'不背法语-ATELIER-便携快照.html','<!doctype html>\n'+root.outerHTML,'text/html');toast(t('便携 HTML 已生成','Portable HTML ready','HTML portable prêt'))}
 function trashModal(){openModal(t('回收站','Trash','Corbeille'),state.trash.length?state.trash.map(item=>'<div class="manager-row row between"><div><strong>'+esc(item.deck?.name||item.word?.french||'')+'</strong><br><small class="muted">'+date(item.deletedAt)+'</small></div>'+btn(t('恢复','Restore','Restaurer'),'restore-trash','small','data-id="'+esc(item.id)+'"')+'</div>').join(''):'<div class="empty">'+t('回收站为空','Trash is empty','La corbeille est vide')+'</div>')}
 function aboutSection(){return '<section class="about-section"><div><strong>'+t('原作者：凌云_Léo','Original author: 凌云_Léo','Auteur original : 凌云_Léo')+'</strong><p class="license-note">Vocabulaire · 不背法语 · '+esc(RELEASE||'双主题实验版')+'</p></div>'+'<div class="row wrap">'+btn(t('查看入门引导','View getting started','Voir le guide de départ'),'onboarding-replay','small')+btn(t('使用说明与快捷键','Help & shortcuts','Aide et raccourcis'),'help','small')+'</div></section>'}
 function helpModal(){openModal(t('使用说明与快捷键','Help & shortcuts','Aide et raccourcis'),'<div class="stack"><p>'+t('新词以短组学习，完成后可选择拼全部或只拼错词。拼写或听写中，灰点代表尚未通过，某一轮首次独立拼对才变绿；错词当场订正，再隔轮复查，全部变绿才结束。复习先独立回忆，再按揭晓前的情况评分。','Learn in short groups, then optionally practise spelling. Rate reviews by what you recalled before revealing.','Apprenez par petits groupes, puis entraînez l’orthographe. Évaluez le rappel avant de voir la réponse.')+'</p><div class="note">'+t('Space / Enter：揭晓、提交、继续<br>1–4：选择选项；评分 Q 认识 / W 模糊 / E 忘记了<br>P：单词发音；S：揭晓后读例句<br>Z：撤销；Esc：关闭弹窗或返回首页<br>输入框内字母快捷键停用，Enter 提交。','Space / Enter: reveal, submit, continue<br>1–4: options; Q Know it / W Unsure / E Forgot<br>P: word; S: revealed example<br>Z: undo; Esc: close or go home<br>Letter shortcuts are off while typing.','Espace / Entrée : révéler, valider, continuer<br>1–4 : choix ; Q Je connais / W Hésitant / E Oublié<br>P : mot ; S : exemple révélé<br>Z : annuler ; Échap : fermer ou accueil<br>Les raccourcis alphabétiques sont désactivés pendant la saisie.')+'</div><p>'+t('拼写题提前播放单词会标记为提示；听写题重播则是正常题目操作。语音取决于设备和浏览器允许情况。','Playing the answer during spelling counts as a hint; replaying dictation does not. Voices depend on the device and browser.','Écouter la réponse en orthographe est un indice, contrairement à la réécoute en dictée.')+'</p><p>'+(PREVIEW?t('预览的词表、进度与音频仅在本次页面会话保留；刷新即重置，正式存档不会被读取或修改。','Preview words, progress and audio last only for this page session. Reloading resets them; saved data is never read or changed.','Les mots, progrès et audios de démonstration ne durent que cette session. Recharger réinitialise la démonstration sans lire ni modifier vos données.'):t('词表、进度和音频保存在此浏览器中。更换文件位置、浏览器或设备前，请先导出完整备份，再在新设备上恢复。','Your words, progress and audio stay in this browser. Export a full backup before moving the file or changing browsers or devices, then restore it there.','Vos mots, progrès et audios restent dans ce navigateur. Exportez une sauvegarde complète avant de déplacer le fichier ou de changer de navigateur ou d’appareil, puis restaurez-la.'))+'</p><p>'+t('基础词表含 50 个词、100 条例句：99 条自编例句使用合成朗读，另有 1 条内置离线真人短句。真人样本：Vion Nicolas · CC BY 2.0 France。','Starter content has 50 words and 100 examples: 99 authored examples use labelled synthesis, and one human recording is embedded offline. Human sample: Vion Nicolas · CC BY 2.0 France.','50 mots et 100 exemples : 99 exemples rédigés avec synthèse vocale et un enregistrement humain intégré hors ligne. Voix : Vion Nicolas · CC BY 2.0 France.')+'</p><p><a href="https://commons.wikimedia.org/wiki/File:Fr-comment-allez%E2%80%90vous.ogg" target="_blank" rel="noreferrer">Shtooka / Wikimedia Commons</a> · <a href="https://creativecommons.org/licenses/by/2.0/fr/" target="_blank" rel="noreferrer">CC BY 2.0 FR</a></p><p class="author-credit">'+t('原作者：凌云_Léo','Original author: 凌云_Léo','Auteur original : 凌云_Léo')+'</p><p class="license-note">CARNET · ts-fsrs 5.4.2 (MIT) · SheetJS (Apache 2.0) · <a href="https://github.com/mrdoob/three.js/tree/r160" target="_blank" rel="noreferrer">Three.js r160 (MIT)</a> · Cormorant (OFL 1.1)<br>'+t('复习安排会随学习表现逐步调整。','Review schedules adapt to your learning.','Le calendrier de révision s’adapte à votre apprentissage.')+'</p></div>')}
@@ -8224,7 +8377,7 @@ const actions={
 let lastSpellInput=null,importReturn=null;
 document.addEventListener('pointerover',e=>{if(e.pointerType==='mouse'&&!weeklyGesture){const day=e.target.closest('.weekly-day');if(day)selectWeeklyDay(day)}});
 document.addEventListener('focusin',e=>{if(weeklyGesture)return;const day=e.target.closest('.weekly-day');if(day)selectWeeklyDay(day)});
-document.addEventListener('keydown',e=>{const day=e.target.closest('.weekly-day');if(!day||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||e.altKey||e.ctrlKey||e.metaKey||e.isComposing)return;const days=[...day.parentElement.querySelectorAll('.weekly-day')],index=days.indexOf(day);const next=e.key==='Home'?0:e.key==='End'?days.length-1:Math.max(0,Math.min(days.length-1,index+(e.key==='ArrowRight'?1:-1)));e.preventDefault();days[next].focus({preventScroll:true});});
+document.addEventListener('keydown',e=>{if(window.VocabStartup?.isActive())return;const day=e.target.closest('.weekly-day');if(!day||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)||e.altKey||e.ctrlKey||e.metaKey||e.isComposing)return;const days=[...day.parentElement.querySelectorAll('.weekly-day')],index=days.indexOf(day);const next=e.key==='Home'?0:e.key==='End'?days.length-1:Math.max(0,Math.min(days.length-1,index+(e.key==='ArrowRight'?1:-1)));e.preventDefault();days[next].focus({preventScroll:true});});
 document.addEventListener('pointerdown',e=>{const chart=e.target.closest('.weekly-chart');if(!chart||e.button!==0||!e.isPrimary||$('#modal').open)return;releaseWeeklyGesture(null,true);weeklyClickSuppressedUntil=0;weeklyGesture={id:e.pointerId,chart,startX:e.clientX,startY:e.clientY,axis:''}},{capture:true});
 document.addEventListener('pointermove',e=>{
  const gesture=weeklyGesture;if(!gesture||e.pointerId!==gesture.id)return;
@@ -8259,7 +8412,7 @@ document.addEventListener('submit',async e=>{e.preventDefault();if(resetInProgre
  if(form.id==='context-form')await saveContext(form);
  }catch(error){report(error)}finally{operation?.finish();submittingForms.delete(form)}});
 $('#modal-close').addEventListener('click',closeModal);$('#modal').addEventListener('cancel',e=>{e.preventDefault();closeModal()});$('#modal').addEventListener('close',placeAudioControl);$('#audio-status').addEventListener('click',stopAudio);
-document.addEventListener('keydown',async e=>{if(resetInProgress)return;if(CARNET&&document.body.dataset.carnetView!=='app')return;if(e.repeat||e.isComposing||e.ctrlKey||e.metaKey||e.altKey)return;
+document.addEventListener('keydown',async e=>{if(window.VocabStartup?.isActive())return;if(resetInProgress)return;if(CARNET&&document.body.dataset.carnetView!=='app')return;if(e.repeat||e.isComposing||e.ctrlKey||e.metaKey||e.altKey)return;
  // Escape navigates home from spelling inputs, but leaves composition and dialogs alone.
  if(e.key==='Escape'&&view==='study'&&!document.querySelector('dialog[open]')&&E.current(state)){e.preventDefault();await actions.pause();return}
  const input=e.target.closest('input,textarea,select,[contenteditable="true"]');if(input){if(view==='study'&&e.key==='Enter'&&input.matches('.spell-input')){e.preventDefault();if(input.id==='spell-masc')$('#spell-fem')?.focus({preventScroll:true});else await actions['check-spelling']()}return}if($('#modal').open||(CARNET&&document.querySelector('dialog[open]'))||view!=='study')return;const c=E.current(state);if(!c)return;if(['Enter',' '].includes(e.key)&&e.target.closest('button,a'))return;
@@ -8356,7 +8509,7 @@ async function prepareLocalReset(external=false){
  await changeQueue;
  await D.closeForReset(!external);await A.closeForReset();
 }
-async function init(){storage=await D.load();state=storage.state;E.ensureState(state);const embedded=$('#portable-state');if(embedded&&PREVIEW){
+async function init(){window.VocabStartup?.setPhase('loading-data');storage=await D.load();state=storage.state;E.ensureState(state);const embedded=$('#portable-state');if(embedded&&PREVIEW){window.VocabStartup?.setPhase('portable');
  try{
   const payload=JSON.parse(embedded.textContent);
   const incoming=D.migrate(payload.state?{version:payload.version,state:payload.state}:payload,{designThemeFallback:designTheme()});
@@ -8366,15 +8519,17 @@ async function init(){storage=await D.load();state=storage.state;E.ensureState(s
   const motion=payload.carnetAppearance?.motion;
   window.VocabCarnetPreview._setMotion(['immersive','standard','reduced','system'].includes(motion)?motion:state.settings.motionMode==='simple'?'reduced':'standard');
  }catch(error){storage.warning=t('便携预览未能恢复；仍使用示例数据：','Portable preview could not load; sample data is shown: ','Aperçu portable non chargé ; données de démonstration : ')+error.message;}
-}else if(embedded){try{const payload=JSON.parse(embedded.textContent);if(!state.decks.length){const incoming=D.migrate(payload.state?{version:4,state:payload.state}:payload,{designThemeFallback:designTheme()});E.ensureState(incoming);incoming.revision=state.revision;await restoreStateMedia(incoming,payload.media||[]);const saved=await D.save(incoming,{expectedRevision:state.revision,snapshot:true});if(!saved.persistent)throw new Error(saved.warning);storage=saved;state=saved.state}else{setTimeout(()=>prepareRestore(payload,true).catch(report),50)}}catch(error){storage.warning=t('便携快照未能自动恢复：','Portable snapshot could not load: ','Impossible de charger l’instantané : ')+error.message}}
+}else if(embedded){try{const payload=JSON.parse(embedded.textContent);if(!state.decks.length&&!storage.blocked){window.VocabStartup?.setPhase('portable');const incoming=D.migrate(payload.state?{version:4,state:payload.state}:payload,{designThemeFallback:designTheme()});E.ensureState(incoming);incoming.revision=state.revision;await restoreStateMedia(incoming,payload.media||[]);const saved=await D.save(incoming,{expectedRevision:state.revision,snapshot:true});if(!saved.persistent)throw new Error(saved.warning);storage=saved;state=saved.state}else{(window.VocabStartup?.whenRemoved||Promise.resolve()).then(()=>prepareRestore(payload,true)).catch(report)}}catch(error){storage.warning=t('便携快照未能自动恢复：','Portable snapshot could not load: ','Impossible de charger l’instantané : ')+error.message}}
  if(!CARNET&&!storage.blocked&&state.settings.onboardingComplete===false){resetOnboarding(false);view='onboarding'}
+ window.VocabStartup?.syncHint(state.settings,{persist:storage.persistent&&!storage.blocked});
  updateViewport();render();if(storage.migrated)toast(t('学习存档已载入。','Your learning data is ready.','Vos données sont prêtes.'));D.subscribe(notice=>{if(notice.resetting){prepareLocalReset(true).catch(report);toast(t('另一页面正在清除本机数据，请关闭本页，清除完成后重新打开。','Another tab is clearing local data. Close this page and reopen after clearing.','Un autre onglet efface les données. Fermez cette page et rouvrez-la après l’effacement.'));return}if(notice.external)toast(t('另一页面更新了进度，请先导出当前数据再刷新。','Another tab changed your progress. Export before refreshing.','Un autre onglet a changé la progression. Exportez avant d’actualiser.'))});
  window.VocabLocalReset?.configure({prepare:()=>prepareLocalReset(),language:()=>state.settings.language});
  window.VocabApp={getState:()=>clone(state),getSettings:()=>clone(state.settings),getView:()=>view,render,exportBackup,begin,...(CARNET?{previewNavigate,previewAppearance,previewSuspend,carnetFinishOnboarding,carnetStartup,carnetAppearance}:{} )};
+ window.VocabStartup?.markDataReady({mode:storage.blocked?'blocked':storage.persistent?'persistent':'temporary'});
  if(PREVIEW)window.VocabCarnetPreview?._attachApp(window.VocabApp);
  if(CARNET)window.VocabCarnetProduct?._attachApp(window.VocabApp);
 }
-init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1><p>'+esc(error.message)+'</p></div>';console.error(error);window.VocabCarnetProduct?._fail(error)});
+init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1><p>'+esc(error.message)+'</p></div>';console.error(error);window.VocabStartup?.fail(error);window.VocabCarnetProduct?._fail(error)});
 })();
 
 </script><script data-bundled-source="carnet-lessons.js">
@@ -8773,7 +8928,7 @@ init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1
  const getSettings=()=>P.getSettings?.()||window.VocabApp?.getSettings?.()||P.getState?.()?.settings||window.VocabApp?.getState?.()?.settings||{};
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const soundIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4zM17 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg>';
- let chromeLanguage='';
+ let chromeLanguage='',sceneStatus='idle',routeEpoch=0;
  let readerAudioState='idle';
  function buildChrome(){chromeLanguage=document.documentElement.lang;
   const bar=document.createElement('div');bar.id='carnet-preview-bar';bar.innerHTML='<span>'+text('视觉验收 · 演示数据','Visual review · demo data','Aperçu visuel · démonstration')+'</span><nav aria-label="'+text('开发预览','Review previews','Aperçus')+'">'+[['journey',text('开场','Opening','Ouverture')],['today',text('今日','Today','Aujourd’hui')],['study',text('学习','Study','Apprendre')],['spelling',text('拼写','Spelling','Orthographe')],['components',text('组件','Components','Composants')]].map(([v,label])=>'<button type="button" data-preview-view="'+v+'" aria-pressed="'+(v===currentView)+'">'+label+'</button>').join('')+'<button type="button" data-carnet="appearance">'+text('外观','Appearance','Apparence')+'</button></nav>';
@@ -8824,7 +8979,12 @@ init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1
  }
  function closeAppearance(){const dialog=$('#carnet-appearance');if(!dialog?.open)return;if(window.VocabMotion)window.VocabMotion.closeModal(dialog);else dialog.close()}
  function refreshFallback(){const el=$('.carnet-fallback-note');if(!el)return;const low=systemReduced.matches||resolvedAppearance().motion==='reduced',staticMode=S.__getDebugState().backend==='static';el.hidden=activeStep>=4||low||!staticMode;const label=text('已为你开启简约动效','A calmer view is ready.','Le mode simplifié est activé.');if(el.textContent!==label)el.textContent=label;}
- async function mountScene(){if(mounted)return scenePromise;mounted=true;const epoch=++sceneEpoch;$('.carnet-loading').hidden=false;scenePromise=S.mount($('#carnet-scene-host'),{onProgress(n){const el=$('.carnet-loading span');if(el){const label=text('正在准备书房','Preparing your study','Préparation de l’espace')+' · '+Math.round(n*100)+'%';if(el.textContent!==label)el.textContent=label;}}});syncAppearance();await scenePromise;if(epoch!==sceneEpoch||!mounted)return;$('.carnet-loading').hidden=true;refreshFallback();schedule()}
+ function localLoading(){const el=$('.carnet-loading');if(!el)return;el.hidden=sceneStatus!=='pending'||!!window.VocabStartup?.isActive();const span=el.querySelector('span');if(span){const label=text('正在准备书房…','Preparing your study…','Préparation de votre espace de lecture…');if(span.textContent!==label)span.textContent=label;}}
+ async function mountScene(){if(mounted)return scenePromise;mounted=true;sceneStatus='pending';const epoch=++sceneEpoch;localLoading();window.VocabStartup?.setPhase('scene',{sceneEpoch:epoch});scenePromise=(async()=>{const result=await S.mount($('#carnet-scene-host'),{onProgress(){if(epoch===sceneEpoch)localLoading();}});if(epoch!==sceneEpoch||!mounted||!['webgl','static','simplified'].includes(result?.backend))return {backend:'disposed'};sceneStatus='ready';window.VocabStartup?.setPhase('view');localLoading();refreshFallback();schedule();return result;})();syncAppearance();return scenePromise;}
+ // Confirm the chosen target's layout after a frame, without waiting forever for
+ // requestAnimationFrame in a background tab. Route changes invalidate this hand-off.
+ function targetReady(target,backend,epoch){return new Promise(resolve=>{let frame=0,done=false;const finish=()=>{if(done)return;done=true;cancelAnimationFrame(frame);document.removeEventListener('visibilitychange',visibility);if(epoch===routeEpoch)window.VocabStartup?.markViewReady({target,backend});resolve();};const visibility=()=>{if(document.hidden)finish();};if(document.hidden){finish();return;}document.addEventListener('visibilitychange',visibility);frame=requestAnimationFrame(()=>{frame=requestAnimationFrame(finish);});});}
+
  function measure(){const story=$('#carnet-story');if(currentView!=='journey'||!story)return;const typing=document.activeElement?.matches('input,textarea,[contenteditable=true]');if(!typing&&(Math.abs(innerWidth-measuredWidth)>40||Math.abs(innerHeight-measuredHeight)>150&&innerWidth>760)){measuredWidth=innerWidth;measuredHeight=innerHeight}const h=measuredHeight-barHeight();story.style.setProperty('--story-h',h+'px');document.documentElement.style.setProperty('--carnet-stable-height',h+'px');unit=h*1.65;S.resize();schedule()}
  function layoutReader(){const paper=$('.carnet-reader-sheet'),host=$('#carnet-scene-host'),caption=$('.carnet-reader-caption');if(currentView!=='journey'||innerWidth<=760||!paper||!host||!caption)return;const rect=S.getBookRect()?.rightPage;if(!rect)return;const top=host.getBoundingClientRect().top;paper.style.left=rect.x+'px';paper.style.top=(rect.y-top)+'px';paper.style.width=rect.width+'px';paper.style.height=rect.height+'px';caption.style.left=(rect.x-rect.width-35)+'px';caption.style.top=(rect.y-top+60)+'px';caption.style.width=(rect.width-35)+'px';}
  function update(){frame=0;if(currentView!=='journey'||!$('#carnet-story')||!$('#carnet-reader')||!$('.carnet-story-next'))return;const raw=Math.max(0,scrollY/unit);let chapter=Math.min(3,Math.floor(raw+.002));const previous=activeStep;
@@ -8842,7 +9002,7 @@ init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1
    captionOpacity=Math.max(captionOpacity,opacity);el.style.opacity=String(opacity);el.inert=opacity<.1;el.setAttribute('aria-hidden',String(opacity<.1));
   });$('#carnet-scene-host').style.setProperty('--carnet-caption-scrim',captionOpacity);
   if(readerBusy&&(raw<2.99||raw>3.5)){window.AudioKit.stop();readerBusy=false;$('[data-carnet=listen]').removeAttribute('aria-busy');}
-  const visible=raw>2.84&&raw<3.65,opacity=smooth(2.84,3,raw)*(1-smooth(3.25,3.65,raw));$('#carnet-reader').hidden=!visible;$('#carnet-reader').style.opacity=opacity;$('#carnet-reader').inert=raw<2.99||raw>3.5;$('#carnet-reader').setAttribute('aria-hidden',String(raw<2.99||raw>3.5));if(visible)requestAnimationFrame(layoutReader);
+  const visible=raw>2.84&&raw<3.65,opacity=smooth(2.84,3,raw)*(1-smooth(3.25,3.65,raw));$('#carnet-reader').hidden=!visible;$('#carnet-reader').style.opacity=opacity;$('#carnet-reader').inert=raw<2.99||raw>3.5||!!window.VocabStartup?.isActive();$('#carnet-reader').setAttribute('aria-hidden',String(raw<2.99||raw>3.5));if(visible)requestAnimationFrame(layoutReader);
   lessons?.setChapter(chapter>=4?chapter:null);refreshFallback();const next=$('.carnet-story-next'),label=chapter>=7?text('回到开场 ↑','Back to opening ↑','Revenir au début ↑'):text('继续 ↓','Continue ↓','Continuer ↓');if(next.textContent!==label)next.textContent=label;lastStoryScroll=scrollY;
  }
  function schedule(){if(!frame)frame=requestAnimationFrame(update)}
@@ -8917,11 +9077,11 @@ init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1
  window.addEventListener('touchstart',()=>{stopNavigation();clearSnapIntent();},{passive:true});
  window.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' ','Escape'].includes(e.key)){stopNavigation();clearSnapIntent();}});
  document.addEventListener('focusin',e=>{if(e.target.matches('input,textarea,select,[contenteditable=true]')){stopNavigation();clearSnapIntent();}});
- async function show(view,options={}){stopNavigation();clearSnapIntent();if(view===currentView&&view!=='journey')return true;if(document.body.dataset.carnetView==='app'&&!await P.suspend())return false;window.AudioKit.stop();if(view==='journey'){
+ async function show(view,options={}){stopNavigation();clearSnapIntent();if(view===currentView&&view!=='journey')return true;const epoch=++routeEpoch;if(document.body.dataset.carnetView==='app'&&!await P.suspend())return false;window.AudioKit.stop();if(view==='journey'){
    if(currentView!=='journey'){P.beginOnboarding();replay=!P.getStartup().needsOnboarding;lessons?.setPreferences(getSettings(),{replay});}
-   currentView='journey';document.body.dataset.carnetView='journey';window.VocabViewport?.afterRender(null,{view:'carnet-story'});await mountScene();measure();scrollTo({top:options.fromStart?0:lastStoryScroll,behavior:'instant'});schedule();
-  }else{document.documentElement.classList.remove('carnet-demo-keyboard');if(currentView==='journey')lastStoryScroll=scrollY;lessons?.setChapter(null);currentView=view;document.body.dataset.carnetView=view==='components'?'components':'app';S.destroy();mounted=false;sceneEpoch++;$('.carnet-loading').hidden=true;if(view==='components'){window.VocabViewport?.afterRender(null,{view:'components'});scrollTo({top:0,behavior:'instant'})}else{if(options.navigate!==false)await P.showApp(view);scrollTo({top:0,behavior:'instant'});window.VocabViewport?.refresh()}$('#carnet-reader').inert=true;}
-  $$('[data-preview-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.previewView===view)));return true;
+   currentView='journey';document.body.dataset.carnetView='journey';window.VocabViewport?.afterRender(null,{view:'carnet-story'});const result=await mountScene();if(epoch!==routeEpoch||result?.backend==='disposed')return false;measure();scrollTo({top:options.fromStart?0:lastStoryScroll,behavior:'instant'});update();await targetReady('journey',result.backend,epoch);
+  }else{window.VocabStartup?.setPhase('view');document.documentElement.classList.remove('carnet-demo-keyboard');if(currentView==='journey')lastStoryScroll=scrollY;lessons?.setChapter(null);currentView=view;document.body.dataset.carnetView=view==='components'?'components':'app';S.destroy();mounted=false;sceneStatus='aborted';sceneEpoch++;localLoading();if(view==='components'){window.VocabViewport?.afterRender(null,{view:'components'});scrollTo({top:0,behavior:'instant'})}else{if(options.navigate!==false)await P.showApp(view);scrollTo({top:0,behavior:'instant'});window.VocabViewport?.refresh()}$('#carnet-reader').inert=true;}
+  $$('[data-preview-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.previewView===view)));if(view!=='journey'&&view!=='components')await targetReady(view==='today'?'today':'app',null,epoch);return true;
  }
  let entering=false;
  async function directEntry(){if(entering)return;entering=true;try{await lessons.submit('enter');if(currentView==='journey')jump(7);}finally{entering=false;}}
@@ -8955,15 +9115,17 @@ init().catch(error=>{$('#app').innerHTML='<div class="empty"><h1>Vocabulaire</h1
  function scheduleKeyboard(){if(!keyboardFrame)keyboardFrame=requestAnimationFrame(keepLessonInputVisible)}
  window.visualViewport?.addEventListener('resize',scheduleKeyboard,{passive:true});
  document.addEventListener('focusin',scheduleKeyboard);document.addEventListener('focusout',scheduleKeyboard);
- window.addEventListener('pagehide',()=>{stopNavigation();clearSnapIntent();S.destroy();});
- const languageObserver=new MutationObserver(()=>{if(!chromeLanguage||chromeLanguage===document.documentElement.lang)return;stopNavigation();clearSnapIntent();const value=$('#carnet-test-input')?.value||'',scroll=scrollY,open=$('#carnet-appearance')?.open;$('#carnet-preview-bar')?.remove();lessonHost?.remove();$('#carnet-story')?.remove();$$('.carnet-story-ui').forEach(el=>el.remove());$('#carnet-appearance')?.remove();$('#carnet-components-preview')?.remove();buildChrome();lessons?.syncLanguage();$('#carnet-test-input').value=value;if(readerRevealed)reveal();readerAudioStatus();$('.carnet-loading').hidden=mounted;syncAppearance();measure();scrollTo({top:scroll,behavior:'instant'});if(open)$('#carnet-appearance').showModal();});languageObserver.observe(document.documentElement,{attributes:true,attributeFilter:['lang']});
+ window.addEventListener('pagehide',()=>{stopNavigation();clearSnapIntent();routeEpoch++;sceneEpoch++;mounted=false;sceneStatus='aborted';window.VocabStartup?.setPhase('view');S.destroy();});
+ window.addEventListener('pageshow',async event=>{if(!event.persisted||currentView!=='journey'||!lessonHost?.isConnected)return;const epoch=++routeEpoch;try{measure();const result=await mountScene();if(epoch!==routeEpoch||result?.backend==='disposed')return;update();await targetReady('journey',result.backend,epoch);}catch(error){console.error(error);window.VocabStartup?.fail(error);}});
+ window.addEventListener('vocab-startup-ready',schedule,{once:true});
+ const languageObserver=new MutationObserver(()=>{if(!chromeLanguage||chromeLanguage===document.documentElement.lang)return;stopNavigation();clearSnapIntent();const value=$('#carnet-test-input')?.value||'',scroll=scrollY,open=$('#carnet-appearance')?.open;$('#carnet-preview-bar')?.remove();lessonHost?.remove();$('#carnet-story')?.remove();$$('.carnet-story-ui').forEach(el=>el.remove());$('#carnet-appearance')?.remove();$('#carnet-components-preview')?.remove();buildChrome();lessons?.syncLanguage();$('#carnet-test-input').value=value;if(readerRevealed)reveal();readerAudioStatus();localLoading();syncAppearance();measure();scrollTo({top:scroll,behavior:'instant'});if(open)$('#carnet-appearance').showModal();});languageObserver.observe(document.documentElement,{attributes:true,attributeFilter:['lang']});
 
  window.VocabCarnetReview={show,jump,setAppearance,getState:()=>({progress,unit,activeStep,currentView,readerRevealed,appearance:P.getAppearance(),resolved:resolvedAppearance(),scene:S.__getDebugState(),lessons:lessons?.getState(),replay,navigation:navigation?{chapter:navigation.chapter,snap:navigation.snap,duration:navigation.duration,target:navigation.to}:null}),mountScene,refresh:schedule};
  async function init(){await P.ready;const startup=P.getStartup();replay=!startup.needsOnboarding;document.documentElement.dataset.carnetPreview=String(PREVIEW);buildChrome();P.beginOnboarding();if(PREVIEW&&!document.getElementById('portable-state'))await P.setAppearance({design:'classic',mode:'light',motion:'system'});syncAppearance();
-  if(!PREVIEW&&!startup.needsOnboarding){await show('today',{navigate:false});return;}
-  document.body.dataset.carnetView='journey';window.VocabViewport?.afterRender(null,{view:'carnet-story'});measure();await mountScene();update();
+  if(!PREVIEW&&(!startup.needsOnboarding||startup.blocked)){await show('today',{navigate:false});return;}
+  document.body.dataset.carnetView='journey';window.VocabViewport?.afterRender(null,{view:'carnet-story'});measure();const epoch=++routeEpoch,result=await mountScene();if(epoch!==routeEpoch||result?.backend==='disposed')return;update();await targetReady('journey',result.backend,epoch);
  }
- init().catch(error=>{console.error(error);const el=$('.carnet-loading');if(el){el.hidden=false;el.textContent=text('场景准备未完成，可从顶部进入产品预览。','Scene unavailable; use the product preview above.','Scène indisponible ; utilisez les aperçus ci-dessus.')}});
+ init().catch(error=>{console.error(error);window.VocabStartup?.fail(error);const el=$('.carnet-loading');if(el){el.hidden=false;el.textContent=text('场景准备未完成，可从顶部进入产品预览。','Scene unavailable; use the product preview above.','Scène indisponible ; utilisez les aperçus ci-dessus.')}});
 })();
 
 </script>

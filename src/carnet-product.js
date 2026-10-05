@@ -58,7 +58,7 @@
       if (host.CARNET_PREVIEW === true && motions.includes(savedMotion)) host.VocabCarnetPreview?._setMotion(savedMotion);
       resolveReady(bridge);
     },
-    _fail(error) { rejectReady(error); }
+    _fail(error) { host.VocabStartup?.fail(error); rejectReady(error); }
   };
   host.VocabCarnetProduct = Object.freeze(bridge);
 })(window);

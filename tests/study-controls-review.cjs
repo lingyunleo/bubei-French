@@ -11,7 +11,7 @@ const checks=[],errors=[],screenshots=[];let browser;
 const pass=name=>{checks.push(name);console.log('PASS',name)};
 const current=page=>page.evaluate(()=>VocabEngine.current(VocabApp.getState()));
 const state=page=>page.evaluate(()=>VocabApp.getState());
-async function ready(page){await page.waitForFunction(()=>window.VocabCarnetProduct&&window.VocabCarnetReview);await page.evaluate(()=>VocabCarnetProduct.ready);await page.waitForFunction(()=>document.querySelector('.carnet-loading')?.hidden)}
+async function ready(page){await page.waitForFunction(()=>window.VocabCarnetProduct&&window.VocabCarnetReview);await page.evaluate(()=>VocabCarnetProduct.ready);await page.waitForFunction(()=>document.querySelector('.carnet-loading')?.hidden&&!window.VocabStartup?.isActive())}
 async function app(page,view){await page.evaluate(view=>VocabCarnetReview.show(view),view);await page.waitForFunction(()=>document.body.dataset.carnetView==='app')}
 async function shot(page,name){const target=path.join(out,name+'.png');await page.screenshot({path:target});screenshots.push(target)}
 async function persisted(page){await page.evaluate(()=>VocabCarnetProduct.suspend());await page.waitForFunction(async()=>{const s=VocabApp.getState(),p=(await VocabData.load()).state;return s.revision===p.revision&&s.settings.showShortcutHints===p.settings.showShortcutHints})}

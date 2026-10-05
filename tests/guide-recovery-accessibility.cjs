@@ -28,7 +28,7 @@ async function boot(options={}){
  if(options.reduced)await page.addInitScript(()=>{window.auditMainAnimations=[];const native=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.matches('#app .main'))auditMainAnimations.push({frames,options});return native.call(this,frames,options);};});
  await page.goto(pathToFileURL(file).href);await ready(page);return page;
 }
-async function ready(page){await page.waitForFunction(()=>window.VocabCarnetReview?.getState().lessons&&document.querySelector('.carnet-loading')?.hidden,null,{timeout:60000});}
+async function ready(page){await page.waitForFunction(()=>window.VocabCarnetReview?.getState().lessons&&document.querySelector('.carnet-loading')?.hidden&&!window.VocabStartup?.isActive(),null,{timeout:60000});}
 async function chapter(page,n){await page.evaluate(n=>VocabCarnetReview.jump(n,true),n);await page.waitForTimeout(80);}
 async function language(page,value){
  await page.evaluate(async language=>{await VocabCarnetProduct.finishOnboarding({intent:'enter',preferences:{language}});await VocabCarnetReview.show('today');await VocabCarnetReview.show('journey',{fromStart:true});},value);
@@ -48,7 +48,8 @@ async function rejectConcurrentRestore(page){
  for(const engine of (process.env.CARNET_BROWSERS||'chromium,webkit').split(',')){
   browser=await launchBrowser(engine);
   let page=await boot({corrupt:true,reduced:true});assert.equal(await page.evaluate(()=>VocabCarnetProduct.getStartup().blocked),true);
-  await chapter(page,7);await page.locator('#carnet-lesson-goal').fill('999');await page.locator('[data-lesson-action=restore]').click();
+  assert.equal(await page.evaluate(()=>document.body.dataset.carnetView),'app');
+  await page.evaluate(()=>VocabCarnetReview.show('journey',{fromStart:true}));await chapter(page,7);await page.locator('#carnet-lesson-goal').fill('999');await page.locator('[data-lesson-action=restore]').click();
   await page.waitForFunction(()=>document.getElementById('modal').open&&document.body.dataset.carnetView==='app');
   assert.equal(await page.evaluate(()=>VocabApp.getState().settings.onboardingComplete),false);
   assert.equal(await page.evaluate(()=>localStorage.getItem('FR_VOCAB_APP_V4')),'{synthetic-broken-json');

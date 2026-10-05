@@ -6,7 +6,7 @@
  let observer=null;
  const reduced=()=>window.VocabMotion?.isReduced()??matchMedia('(prefers-reduced-motion:reduce)').matches;
  const visible=node=>{const r=node.getBoundingClientRect();return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight};
- const appVisible=()=>document.body.dataset.carnetView==='app';
+ const appVisible=()=>document.body.dataset.carnetView==='app'&&!window.VocabStartup?.isActive();
  function animate(node,frames,options){const a=window.VocabMotion?.animate(node,frames,options);if(a){animations.add(a);a.finished.then(()=>animations.delete(a),()=>animations.delete(a))}return a}
  function title(node){
   if(!node||seen.has('title')||!visible(node)||!appVisible())return;
@@ -47,6 +47,7 @@
  // Finishing the guide exposes an already-rendered app. Wait for that hand-off
  // so an invisible first render cannot consume the one-time title reveal.
  new MutationObserver(()=>{const view=window.VocabApp?.getView();window.VocabSmoothScroll?.refresh(view);if(appVisible())refresh(view)}).observe(document.body,{attributes:true,attributeFilter:['data-carnet-view']});
+ window.addEventListener('vocab-startup-ready',()=>refresh(window.VocabApp?.getView()),{once:true});
  window.addEventListener('vocab-motionchange',settle);window.addEventListener('pagehide',settle);
  document.addEventListener('visibilitychange',()=>{if(document.hidden)settle()});
  window.VocabEditorialMotion=Object.freeze({beforeRender:settle,refresh});

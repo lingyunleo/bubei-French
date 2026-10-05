@@ -7,6 +7,7 @@
  const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
  const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
  const lerp=(a,b,t)=>a+(b-a)*t;
+ const STATIC_READY_TIMEOUT_MS=2000;
  let instance=null,progress=0,appearance={design:'classic',mode:'light',motion:'standard'};
  const BOOK={x:1.02,z:-.68,width:3.20,depth:4.55,top:.385};
  const INK={x:-5.48,z:.932,y:.059,width:5.76,height:1.536,bottle:{x:-5.95,y:.90,z:.1}};
@@ -17,13 +18,18 @@
  function seeded(seed=1){return()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646}}
  function create(host,options={}){
   const T=window.THREE;let scene,camera,renderer,root,wood,cloth,paper,coverTexture,pageTexture,inkTexture,pen,inkPlane,frontPivot,frontCover,bookGroup,topPage,bookBack,spine,spot,dayLight,ambient,windowLight,windowGlass,lampGlow,readShadow;
-  let frame=0,disposed=false,suspended=false,width=1,height=1,readyResolve,readyReject,backend='static',contextLost=false,actual=0,lastInk=-1,coverAngle=0,pageCurve=0,inkSample=null;
-  const resources=new Set(),flips=[],cleanup=[],staticView=document.createElement('img');
-  const ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject});
+  let frame=0,disposed=false,suspended=false,width=1,height=1,readyResolve,settled=false,backend='pending',contextLost=false,actual=0,lastInk=-1,coverAngle=0,pageCurve=0,inkSample=null;
+  let workEpoch=0,prepared=false,forcedStatic=false,fallbackPromise=null,imageRequest=null,presentation='pending';
+  const resources=new Set(),flips=[],cleanup=[],webglCleanup=[],preparationFrames=new Map(),staticView=document.createElement('img'),originalBackground=host.style.backgroundColor;
+  const ready=new Promise(resolve=>{readyResolve=resolve});
+  const valid=epoch=>!disposed&&!forcedStatic&&epoch===workEpoch;
+  const finish=result=>{if(!settled){settled=true;readyResolve(disposed?{backend:'disposed'}:result)}return result};
+  function preparationFrame(){return new Promise(resolve=>{const id=requestAnimationFrame(()=>{preparationFrames.delete(id);resolve(true)});preparationFrames.set(id,()=>resolve(false))})}
+  function cancelPreparation(){workEpoch++;for(const [id,cancel]of preparationFrames){cancelAnimationFrame(id);cancel()}preparationFrames.clear()}
   const track=x=>(resources.add(x),x);
-  const report=v=>{try{options.onProgress?.(v)}catch(_){}};
+  const report=v=>{if(!disposed)try{options.onProgress?.(v)}catch(_){}};
   staticView.className='carnet-scene-static';staticView.alt='';staticView.setAttribute('aria-hidden','true');Object.assign(staticView.style,{position:'absolute',inset:'0',width:'100%',height:'100%',objectFit:'cover',display:'none',pointerEvents:'none'});host.append(staticView);host.setAttribute('aria-hidden','true');
-  const add=(el,event,fn,opts)=>{el.addEventListener(event,fn,opts);cleanup.push(()=>el.removeEventListener(event,fn,opts))};
+  const add=(el,event,fn,opts,list=cleanup)=>{el.addEventListener(event,fn,opts);list.push(()=>el.removeEventListener(event,fn,opts))};
   function texture(c){const t=track(new T.CanvasTexture(c));t.colorSpace=T.SRGBColorSpace;t.anisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),8);return t}
   function paperCanvas(w=1024,h=1024){const c=canvas(w,h),ctx=c.getContext('2d'),rand=seeded(7),d=ctx.createImageData(w,h);for(let i=0;i<d.data.length;i+=4){const n=(rand()-.5)*5;d.data[i]=247+n;d.data[i+1]=243+n;d.data[i+2]=232+n;d.data[i+3]=255}ctx.putImageData(d,0,0);ctx.strokeStyle='rgba(125,111,84,.026)';ctx.lineWidth=.6;for(let i=0;i<900;i++){const x=rand()*w,y=rand()*h;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+3+rand()*8,y+(rand()-.5)*2);ctx.stroke()}return c}
   function woodCanvas(){const c=canvas(2048,1024),ctx=c.getContext('2d'),rand=seeded(19),d=ctx.createImageData(c.width,c.height);for(let y=0;y<c.height;y++)for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;const wave=y+Math.sin(x*.002+y*.011)*12+Math.sin(x*.01)*3;const grain=Math.sin(wave*.62)*.6+Math.sin(wave*.19)*1.6+Math.sin(wave*.045)*2.0+(rand()-.5)*4;const plank=Math.floor(y/255);d.data[i]=137+grain*.8-plank%2*2;d.data[i+1]=118+grain*.65-plank%2*2;d.data[i+2]=93+grain*.48;d.data[i+3]=255}ctx.putImageData(d,0,0);ctx.strokeStyle='rgba(40,28,16,.25)';ctx.lineWidth=1;[256,512,768].forEach(y=>{ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(2048,y);ctx.stroke()});for(let i=0;i<135;i++){const y=rand()*1024;ctx.strokeStyle=`rgba(58,37,21,${.03+rand()*.07})`;ctx.lineWidth=.4+rand()*.7;ctx.beginPath();for(let x=0;x<=2048;x+=32){const yy=y+Math.sin(x*.003+y)*7+Math.sin(x*.009+y*.1)*1.3;x?ctx.lineTo(x,yy):ctx.moveTo(x,yy)}ctx.stroke()}return c}
@@ -111,24 +117,58 @@
    topPage.material.map=q>=.82?topPage.material.userData.blank:pageTexture;readShadow.visible=open>.83;
   }
   function staticAsset(){const assets=window.VocabCarnetSceneAssets;if(!assets)return null;const key=appearance.design+'-'+appearance.mode,kind=width/height<.85?'mobile':'desktop',stage=progress<1?'room':progress<2?'paper':'book';return assets[key]?.[kind]?.[stage]||assets['classic-'+appearance.mode]?.[kind]?.[stage]||assets['classic-light']?.[kind]?.[stage]||null}
-  function showStatic(){const asset=staticAsset();if(asset){if(staticView.src!==asset.src)staticView.src=asset.src;staticView.style.display='block';}host.dataset.carnetBackend='static';if(renderer)renderer.domElement.style.display='none';backend='static';return !!asset}
-  function draw(){if(disposed||suspended||document.hidden)return;if(!renderer||contextLost){showStatic();return;}if(reduced()){if(showStatic())return;}
-   renderer.domElement.style.display='block';staticView.style.display='none';backend='webgl';host.dataset.carnetBackend='webgl';const p=reduced()?(progress<1?0:progress<2?1.91:3):progress;update(p);renderer.render(scene,camera);
+  function paintStatic(result){if(disposed||presentation!=='static')return;backend=result.backend;host.dataset.carnetBackend=backend;staticView.style.display=backend==='static'?'block':'none';host.style.backgroundColor=backend==='simplified'?'var(--bg)':originalBackground;if(renderer)renderer.domElement.style.display='none'}
+  function showStatic(){
+   if(disposed)return Promise.resolve({backend:'disposed'});
+   presentation='static';const asset=staticAsset();
+   if(!asset?.src){const result={backend:'simplified',reason:'static-unavailable'};imageRequest?.cancel(result);imageRequest=null;paintStatic(result);return Promise.resolve(result)}
+   if(imageRequest?.src===asset.src){paintStatic(imageRequest.result||{backend:'pending'});return imageRequest.promise}
+   const previous=imageRequest;let resolve,timer=0,done=false;
+   const request={src:asset.src,result:null,promise:new Promise(done=>{resolve=done}),cancel:null};imageRequest=request;
+   const cleanupImage=()=>{clearTimeout(timer);staticView.removeEventListener('load',loaded);staticView.removeEventListener('error',failed)};
+   const complete=result=>{if(done)return;done=true;cleanupImage();request.result=result;if(imageRequest===request)paintStatic(result);resolve(result)};
+   request.cancel=result=>{if(done)return;done=true;cleanupImage();resolve(result)};
+   const failed=()=>complete({backend:'simplified',reason:'static-load-failed'});
+   const loaded=()=>{if(done||disposed||imageRequest!==request)return;if(!staticView.naturalWidth){failed();return}let decoded;try{decoded=staticView.decode?.()}catch(_){complete({backend:'simplified',reason:'static-decode-failed'});return}Promise.resolve(decoded).then(()=>{if(!done&&!disposed&&imageRequest===request)complete({backend:'static'})},()=>complete({backend:'simplified',reason:'static-decode-failed'}))};
+   // A changed theme, orientation or chapter replaces the pending image. Older
+   // callers follow its replacement, rather than releasing an obsolete view.
+   previous?.cancel(request.promise);paintStatic({backend:'pending'});
+   staticView.addEventListener('load',loaded);staticView.addEventListener('error',failed);
+   timer=setTimeout(()=>complete({backend:'simplified',reason:'static-timeout'}),STATIC_READY_TIMEOUT_MS);
+   staticView.src=asset.src;if(staticView.complete)loaded();
+   return request.promise;
   }
-  function requestDraw(){if(!frame&&!disposed&&!suspended&&!document.hidden)frame=requestAnimationFrame(()=>{frame=0;try{draw()}catch(e){console.warn('Carnet scene could not render; using its photographed keyframe.',e);showStatic()}})}
-  function resize(){const r=host.getBoundingClientRect();width=Math.max(1,r.width||innerWidth);height=Math.max(1,r.height||innerHeight);if(renderer){renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.65));renderer.setSize(width,height,false);}if(backend==='static')showStatic();requestDraw()}
+  function disposeWebGL(){
+   const release=fn=>{try{fn()}catch(error){console.warn('Carnet scene resource could not be released.',error)}};
+   webglCleanup.splice(0).forEach(release);resources.forEach(r=>release(()=>r.dispose?.()));resources.clear();
+   if(renderer){const old=renderer;renderer=null;release(()=>old.dispose());release(()=>old.forceContextLoss());old.domElement.remove()}
+   scene=camera=root=wood=cloth=paper=coverTexture=pageTexture=inkTexture=pen=inkPlane=frontPivot=frontCover=bookGroup=topPage=bookBack=spine=spot=dayLight=ambient=windowLight=windowGlass=lampGlow=readShadow=null;flips.length=0;prepared=false;
+  }
+  function useStaticFallback(){
+   if(disposed)return Promise.resolve({backend:'disposed'});
+   if(fallbackPromise)return fallbackPromise;
+   forcedStatic=true;cancelPreparation();cancelAnimationFrame(frame);frame=0;disposeWebGL();
+   fallbackPromise=showStatic().then(result=>{if(disposed)return {backend:'disposed'};report(1);finish(result);return disposed?{backend:'disposed'}:result});
+   return fallbackPromise;
+  }
+  function draw(initial=false){if(disposed)return {backend:'disposed'};if(!initial&&(suspended||document.hidden))return null;if(forcedStatic||contextLost)return showStatic();if(!prepared)return null;if(reduced()&&staticAsset())return showStatic();
+   presentation='webgl';host.style.backgroundColor=originalBackground;renderer.domElement.style.display='block';staticView.style.display='none';backend='webgl';host.dataset.carnetBackend='webgl';const p=reduced()?(progress<1?0:progress<2?1.91:3):progress;update(p);renderer.render(scene,camera);return {backend:'webgl'};
+  }
+  function requestDraw(){if(!frame&&!disposed&&!suspended&&!document.hidden)frame=requestAnimationFrame(()=>{frame=0;try{draw()}catch(e){console.warn('Carnet scene could not render; using its photographed keyframe.',e);useStaticFallback()}})}
+  function resize(){const r=host.getBoundingClientRect();width=Math.max(1,r.width||innerWidth);height=Math.max(1,r.height||innerHeight);if(renderer){renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.65));renderer.setSize(width,height,false);}if(presentation==='static')showStatic();requestDraw()}
   function screenPoint(v){const p=new T.Vector3(...v).applyMatrix4(bookGroup.matrixWorld).project(camera),r=host.getBoundingClientRect();return{x:r.left+(p.x+1)*width/2,y:r.top+(1-p.y)*height/2}}
   function getBookRect(){if(renderer&&scene&&backend==='webgl'){bookGroup.updateMatrixWorld(true);const quad=[[.16,BOOK.top+.004,-2.03],[3.02,BOOK.top+.004,-2.03],[3.02,BOOK.top+.004,2.03],[.16,BOOK.top+.004,2.03]].map(screenPoint);const xs=quad.map(p=>p.x),ys=quad.map(p=>p.y),x=Math.min(...xs),y=Math.min(...ys),w=Math.max(...xs)-x,h=Math.max(...ys)-y;return{rightPage:{x,y,width:w,height:h,left:x,top:y,right:x+w,bottom:y+h,quad},stable:progress>=2.99,progress};}
    const asset=staticAsset(),r=host.getBoundingClientRect();if(asset?.rect){const scale=Math.max(width/asset.width,height/asset.height),ox=r.left+(width-asset.width*scale)/2,oy=r.top+(height-asset.height*scale)/2,a=asset.rect;return{rightPage:{x:ox+a.x*scale,y:oy+a.y*scale,width:a.width*scale,height:a.height*scale},stable:progress>=2,progress};}return{rightPage:{x:r.left+width*.53,y:r.top+height*.19,width:width*.30,height:height*.62},stable:progress>=2.99,progress};}
   function suspend(value){suspended=!!value;if(suspended){cancelAnimationFrame(frame);frame=0}else requestDraw()}
-  function destroy(){if(disposed)return;disposed=true;cancelAnimationFrame(frame);cleanup.forEach(fn=>fn());resources.forEach(r=>r.dispose?.());renderer?.dispose();renderer?.forceContextLoss();renderer?.domElement.remove();staticView.remove();readyResolve({backend:'disposed'});delete host.dataset.carnetBackend;}
+  function destroy(){if(disposed)return;disposed=true;finish({backend:'disposed'});cancelPreparation();cancelAnimationFrame(frame);frame=0;cleanup.forEach(fn=>fn());imageRequest?.cancel({backend:'disposed'});imageRequest=null;disposeWebGL();staticView.remove();host.style.backgroundColor=originalBackground;delete host.dataset.carnetBackend;}
   add(window,'resize',resize,{passive:true});add(document,'visibilitychange',()=>{if(!document.hidden)requestDraw();else{cancelAnimationFrame(frame);frame=0}});add(media,'change',requestDraw);
   const observer=window.ResizeObserver?new ResizeObserver(resize):null;observer?.observe(host);cleanup.push(()=>observer?.disconnect());resize();report(.04);
-  requestAnimationFrame(async()=>{if(disposed)return;try{if(!T)throw new Error('Bundled Three unavailable');renderer=new T.WebGLRenderer({alpha:false,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;Object.assign(renderer.domElement.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});renderer.domElement.className='carnet-scene-canvas';renderer.domElement.setAttribute('aria-hidden','true');host.append(renderer.domElement);add(renderer.domElement,'webglcontextlost',e=>{if(disposed)return;e.preventDefault();contextLost=true;showStatic()});add(renderer.domElement,'webglcontextrestored',()=>{if(disposed)return;contextLost=false;requestDraw()});
-   scene=new T.Scene();camera=new T.PerspectiveCamera(43,width/height,.035,100);root=new T.Group();scene.add(root);buildEnvironment();buildRoom();report(.36);await new Promise(r=>requestAnimationFrame(r));if(disposed)return;buildPaperAndInk();report(.59);buildBook();setLighting();resize();update(progress);renderer.compile(scene,camera);report(.93);draw();report(1);readyResolve({backend});
-  }catch(e){showStatic();report(1);readyResolve({backend:'static',reason:e.message});}});
-  return {host,ready,resize,suspend,destroy,setProgress(){requestDraw()},setAppearance(){setLighting();lastInk=-1;requestDraw()},getBookRect,capture(){if(renderer&&backend==='webgl'){draw();return renderer.domElement.toDataURL('image/png')}return staticView.src||null},__getDebugState(){return {backend,progress,actual,coverAngle,pageCurve,camera:camera?.position.toArray(),target:cameraPose(actual).look,pen:pen?.position.toArray(),penVisible:pen?.visible,ink:inkSample,inkBounds:{...INK},book:BOOK,appearance:{...appearance},suspended,width,height}}};
+  const epoch=workEpoch;
+  preparationFrame().then(async active=>{if(!active||!valid(epoch))return;try{if(!T)throw new Error('Bundled Three unavailable');renderer=new T.WebGLRenderer({alpha:false,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});if(!valid(epoch)){disposeWebGL();return}renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;Object.assign(renderer.domElement.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none'});renderer.domElement.className='carnet-scene-canvas';renderer.domElement.setAttribute('aria-hidden','true');host.append(renderer.domElement);add(renderer.domElement,'webglcontextlost',e=>{if(disposed||forcedStatic)return;e.preventDefault();contextLost=true;showStatic()},undefined,webglCleanup);add(renderer.domElement,'webglcontextrestored',()=>{if(disposed||forcedStatic)return;contextLost=false;requestDraw()},undefined,webglCleanup);
+   scene=new T.Scene();camera=new T.PerspectiveCamera(43,width/height,.035,100);root=new T.Group();scene.add(root);buildEnvironment();buildRoom();report(.36);if(!valid(epoch)||!await preparationFrame()||!valid(epoch))return;buildPaperAndInk();report(.59);if(!valid(epoch))return;buildBook();setLighting();prepared=true;resize();update(progress);renderer.compile(scene,camera);report(.93);if(!valid(epoch))return;const result=await draw(true);if(!valid(epoch))return;report(1);finish(result);
+  }catch(e){if(valid(epoch)){console.warn('Carnet scene could not prepare; using its photographed keyframe.',e);useStaticFallback()}}});
+  return {host,ready,resize,suspend,destroy,useStaticFallback,setProgress(){requestDraw()},setAppearance(){setLighting();lastInk=-1;if(presentation==='static')showStatic();requestDraw()},getBookRect,capture(){if(renderer&&backend==='webgl'){draw();return renderer.domElement.toDataURL('image/png')}return backend==='static'?staticView.src:null},__getDebugState(){return {backend,progress,actual,coverAngle,pageCurve,camera:camera?.position.toArray(),target:cameraPose(actual).look,pen:pen?.position.toArray(),penVisible:pen?.visible,ink:inkSample,inkBounds:{...INK},book:BOOK,appearance:{...appearance},suspended,width,height}}};
  }
- const api={mount(host,options={}){if(typeof host==='string')host=document.querySelector(host);if(!host)return Promise.resolve({backend:'none'});if(instance?.host===host){instance.resize();return instance.ready}instance?.destroy();instance=create(host,options);api.ready=instance.ready;return instance.ready},setProgress(p){const next=clamp(Number(p)||0,0,3);if(next===progress)return;progress=next;instance?.setProgress()},setAppearance(a={}){if(a.motion)configuredMotion=true;appearance={...appearance,...a};instance?.setAppearance()},resize(){instance?.resize()},suspend(value){instance?.suspend(value)},destroy(){instance?.destroy();instance=null;progress=0},getBookRect(){return instance?.getBookRect()||null},capture(){return instance?.capture()||null},__getDebugState(){return instance?.__getDebugState()||{backend:'none',progress,appearance}},ready:Promise.resolve({backend:'none'})};
+ const api={mount(host,options={}){if(typeof host==='string')host=document.querySelector(host);if(!host)return Promise.resolve({backend:'none'});if(instance?.host===host){instance.resize();return instance.ready}instance?.destroy();instance=create(host,options);api.ready=instance.ready;return instance.ready},useStaticFallback(){return instance?.useStaticFallback()||Promise.resolve({backend:'none'})},setProgress(p){const next=clamp(Number(p)||0,0,3);if(next===progress)return;progress=next;instance?.setProgress()},setAppearance(a={}){if(a.motion)configuredMotion=true;appearance={...appearance,...a};instance?.setAppearance()},resize(){instance?.resize()},suspend(value){instance?.suspend(value)},destroy(){instance?.destroy();instance=null;progress=0},getBookRect(){return instance?.getBookRect()||null},capture(){return instance?.capture()||null},__getDebugState(){return instance?.__getDebugState()||{backend:'none',progress,appearance}},ready:Promise.resolve({backend:'none'})};
  window.VocabCarnetScene=api;
 })();

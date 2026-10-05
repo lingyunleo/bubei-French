@@ -15,8 +15,13 @@
 <link rel="stylesheet" href="carnet-tokens.css"><link rel="stylesheet" href="carnet-components.css"><link rel="stylesheet" href="carnet-story.css"><link rel="stylesheet" href="carnet-lessons.css"><link rel="stylesheet" href="carnet-continuation.css">
 <link rel="stylesheet" href="study-controls.css">
 <link rel="stylesheet" href="smooth-scroll.css"><link rel="stylesheet" href="product-polish.css">
+<link rel="stylesheet" href="startup.css">
 </head>
 <body data-carnet-view="journey">
+<section id="startup-shell" aria-label="Vocabulaire">
+ <div class="startup-page"><h1 class="startup-brand" lang="zh-CN">不背法语</h1><p class="startup-wordmark">VOCABULAIRE</p><p class="startup-motto" lang="fr">Un peu, chaque jour.</p><i class="startup-ink" aria-hidden="true"></i><p class="startup-status" role="status" aria-live="polite" aria-atomic="true"></p><div class="startup-actions"><button type="button" data-startup-action="fallback" hidden></button><button type="button" data-startup-action="reload" hidden></button><button type="button" data-startup-action="help" hidden></button></div><p class="startup-help" hidden></p><noscript><p>请开启 JavaScript 后重新载入。<br>Please enable JavaScript and reload.<br>Activez JavaScript et rechargez la page.</p></noscript></div>
+</section>
+<script src="startup.js"></script>
 <div id="carnet-scene-host"></div>
 <div id="app"><div class="boot">Vocabulaire <span>正在打开你的学习空间…</span></div></div>
 <dialog id="modal" aria-labelledby="modal-title"><header><h2 id="modal-title"></h2><button type="button" id="modal-close" class="icon-button" aria-label="关闭">×</button></header><div id="modal-toast" role="status" aria-live="polite" hidden></div><div id="modal-body"></div><footer id="modal-footer"></footer></dialog>
