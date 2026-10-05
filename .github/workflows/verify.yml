@@ -24,6 +24,10 @@ jobs:
         run: git diff --exit-code -- '*.html'
       - run: npm test
       - run: npm run test:browser
+        # The hosted runner has no GPU; use Mesa's CPU renderer for both engines.
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          GALLIUM_DRIVER: llvmpipe
       - uses: actions/upload-artifact@v4
         if: always()
         with:
