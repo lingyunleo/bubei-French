@@ -13,11 +13,13 @@
   const bridge = {
     ready,
     getState() { if (!app) return null; return app.getState(); },
+    // Settings are a detached copy; ordinary UI reads never need the whole library.
+    getSettings() { return app?.getSettings?.() || app?.getState?.()?.settings || {}; },
     getStartup() { return app ? app.carnetStartup() : {needsOnboarding:false,hasWords:false,loading:true,preview:host.CARNET_PREVIEW === true}; },
     getAppearance() {
       if (host.CARNET_PREVIEW === true && host.VocabCarnetPreview) return host.VocabCarnetPreview.getAppearance();
       if (app?.carnetAppearance) return app.carnetAppearance();
-      const s = app?.getState().settings;
+      const s = bridge.getSettings();
       return {design:s?.designTheme || 'classic',mode:s?.theme || 'light',motion:motions.includes(s?.carnetMotion) ? s.carnetMotion : s?.motionMode === 'simple' ? 'reduced' : 'system'};
     },
     setAppearance(patch = {}) {
@@ -52,7 +54,7 @@
     },
     _attachApp(value) {
       app = value;
-      const savedMotion = app.getState().settings.carnetMotion;
+      const savedMotion = bridge.getSettings().carnetMotion;
       if (host.CARNET_PREVIEW === true && motions.includes(savedMotion)) host.VocabCarnetPreview?._setMotion(savedMotion);
       resolveReady(bridge);
     },

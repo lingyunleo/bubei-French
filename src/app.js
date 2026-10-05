@@ -756,7 +756,7 @@ async function init(){storage=await D.load();state=storage.state;E.ensureState(s
  if(!CARNET&&!storage.blocked&&state.settings.onboardingComplete===false){resetOnboarding(false);view='onboarding'}
  updateViewport();render();if(storage.migrated)toast(t('学习存档已载入。','Your learning data is ready.','Vos données sont prêtes.'));D.subscribe(notice=>{if(notice.resetting){prepareLocalReset(true).catch(report);toast(t('另一页面正在清除本机数据，请关闭本页，清除完成后重新打开。','Another tab is clearing local data. Close this page and reopen after clearing.','Un autre onglet efface les données. Fermez cette page et rouvrez-la après l’effacement.'));return}if(notice.external)toast(t('另一页面更新了进度，请先导出当前数据再刷新。','Another tab changed your progress. Export before refreshing.','Un autre onglet a changé la progression. Exportez avant d’actualiser.'))});
  window.VocabLocalReset?.configure({prepare:()=>prepareLocalReset(),language:()=>state.settings.language});
- window.VocabApp={getState:()=>clone(state),getView:()=>view,render,exportBackup,begin,...(CARNET?{previewNavigate,previewAppearance,previewSuspend,carnetFinishOnboarding,carnetStartup,carnetAppearance}:{} )};
+ window.VocabApp={getState:()=>clone(state),getSettings:()=>clone(state.settings),getView:()=>view,render,exportBackup,begin,...(CARNET?{previewNavigate,previewAppearance,previewSuspend,carnetFinishOnboarding,carnetStartup,carnetAppearance}:{} )};
  if(PREVIEW)window.VocabCarnetPreview?._attachApp(window.VocabApp);
  if(CARNET)window.VocabCarnetProduct?._attachApp(window.VocabApp);
 }
