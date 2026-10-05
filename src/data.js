@@ -121,7 +121,16 @@
     // Undo can restore an older skill record even when the current one is valid.
     const undoSkill = out.session?.undo?.skill;
     if (undoSkill !== undefined && undoSkill !== null) validateSkills(undoSkill);
+    function validateMastery(card) {
+      if (!card) return;
+      if (card.manualMastered !== undefined && typeof card.manualMastered !== 'boolean') fail('标熟状态无效。');
+      if (card.manualMastered === true) num(card.manualMasteredAt,0,8640000000000000,'标熟时间');
+      else if (card.manualMasteredAt !== undefined) fail('标熟时间缺少对应的标熟状态。');
+    }
+    if (out.session?.undo?.kind === 'manual-mastery') map(out.session.undo.card, '标熟撤销记录');
+    validateMastery(out.session?.undo?.card);
     for (const card of Object.values(out.cards)) {
+      validateMastery(card);
       if (card.dueAt !== undefined && card.dueAt !== null) num(card.dueAt,0,8640000000000000,'词条复习时间');
       for (const key of ['started','acquired']) if (card[key] !== undefined && typeof card[key] !== 'boolean') fail('词条学习状态无效。');
       if (card.fsrs !== undefined && card.fsrs !== null) {
@@ -158,6 +167,7 @@
     out.trash = input.trash === undefined ? [] : input.trash;
     if (!Array.isArray(out.trash) || out.trash.length > 100 || out.trash.some(t => !plain(t) || !['deck','word'].includes(t.kind) || typeof t.id !== 'string')) fail('回收站数据无效。');
     for (const item of out.trash) {
+      for (const card of Object.values(item.attachments?.cards || {})) validateMastery(card);
       if (item.kind === 'word') item.word = C.validateWord(item.word);
       else {
         if (!plain(item.deck) || !Array.isArray(item.deck.words)) fail('回收站词表无效。');

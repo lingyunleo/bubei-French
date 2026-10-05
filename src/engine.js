@@ -47,6 +47,24 @@
     return result;
   }
   function find(state, id) { return allWords(state).find(x => x.word.id === id) || null; }
+  function isManuallyMastered(state, id) { return safeId(id) && state?.cards?.[id]?.manualMastered === true; }
+  function completedIds(session) { return [...new Set([...session.completedIds, ...(session.masteredIds || [])])]; }
+  // A personal exemption does not fabricate an answer or overwrite FSRS. The
+  // original acquired/due/skills/history remain the source when it is cancelled.
+  function syncMasteredSession(state) {
+    const s = state.session; if (!s) return false;
+    const ids = s.wordIds.filter(id => isManuallyMastered(state, id));
+    if (!ids.length && !s.masteredIds) return false;
+    const excluded = new Set(ids);
+    if (ids.length) s.masteredIds = ids; else delete s.masteredIds;
+    s.queue = s.queue.filter(item => !excluded.has(item.wordId));
+    s.failedIds = s.failedIds.filter(id => !excluded.has(id));
+    for (const key of ['retryIds','roundWordIds']) if (s[key]) s[key] = s[key].filter(id => !excluded.has(id));
+    const removed = !!s.current && excluded.has(s.current.wordId);
+    if (removed) { s.current = null; s.draft = {}; }
+    if (s.done) s.summary = summaryOf(s);
+    return removed;
+  }
   function selected(state) {
     const ids = Array.isArray(state.settings.studyDeckIds) ? state.settings.studyDeckIds : [];
     return allWords(state).filter(x => ids.includes(x.deckId) && !x.word.needsConfirmation);
@@ -93,13 +111,17 @@
       for (const key of ['wordIds','completedIds','failedIds','mistakeIds']) if (!Array.isArray(value[key]) || value[key].some(id => !safeId(id)) || new Set(value[key]).size !== value[key].length) issue();
       const ids = new Set(value.wordIds);
       for (const key of ['completedIds','failedIds','mistakeIds']) if (value[key].some(id => !ids.has(id))) issue();
-      if (value.total !== value.wordIds.length || value.completed !== value.completedIds.length || value.deferred !== value.failedIds.length) issue();
+      if (value.masteredIds !== undefined || value.mastered !== undefined) {
+        if (!Array.isArray(value.masteredIds) || value.masteredIds.some(id => !ids.has(id)) || new Set(value.masteredIds).size !== value.masteredIds.length || value.mastered !== value.masteredIds.length) issue();
+      }
+      if (value.total !== value.wordIds.length || value.completed !== completedIds(value).length || value.deferred !== value.failedIds.length) issue();
       if (value.rounds !== undefined && (!Number.isSafeInteger(value.rounds) || value.rounds < 1)) issue();
     }
     function session(s, isUndo) {
       if (!s || typeof s !== 'object' || !safeId(s.id) || !['learn','review','spelling','dictation'].includes(s.kind) || !Number.isInteger(s.step) || s.step < 0 || !Number.isInteger(s.answers) || s.answers < 0 || typeof s.done !== 'boolean') issue();
       for (const key of ['wordIds','completedIds','failedIds','mistakeIds']) if (!Array.isArray(s[key]) || s[key].some(id => !known.has(id)) || new Set(s[key]).size !== s[key].length) issue();
       const batch = new Set(s.wordIds);
+      if (s.masteredIds !== undefined && (!Array.isArray(s.masteredIds) || s.masteredIds.some(id => !batch.has(id)) || new Set(s.masteredIds).size !== s.masteredIds.length)) issue();
       for (const key of ['completedIds','failedIds','mistakeIds']) if (s[key].some(id => !batch.has(id))) issue();
       if (!Array.isArray(s.queue) || !s.failures || typeof s.failures !== 'object') issue();
       if (s.round !== undefined || s.roundWordIds !== undefined || s.retryIds !== undefined) {
@@ -114,11 +136,39 @@
         if (active && (!safeId(e.token) || !['question','revealed','answered'].includes(e.phase) || typeof e.revealed !== 'boolean' || typeof e.answered !== 'boolean' || typeof e.assisted !== 'boolean' || !Array.isArray(e.choices))) issue();
         if (active && e.choices.some(x => !x || typeof x.id !== 'string' || typeof x.text !== 'string')) issue();
       }
+      if (s.masteryPauses !== undefined) {
+        if (!s.masteryPauses || typeof s.masteryPauses !== 'object' || Array.isArray(s.masteryPauses)) issue();
+        for (const [id,pause] of Object.entries(s.masteryPauses)) {
+          if (!batch.has(id) || !pause || typeof pause !== 'object' || Array.isArray(pause) || Object.keys(pause).some(key => !['current','queue','draft','round','retry','failed','roundWord','restoring'].includes(key))) issue();
+          for (const key of ['retry','failed','roundWord','restoring']) if (typeof pause[key] !== 'boolean') issue();
+          const practice = ['spelling','dictation'].includes(s.kind);
+          if (practice ? !Number.isSafeInteger(pause.round) || pause.round < 1 || pause.round > s.round : pause.round !== null) issue();
+          if (!pause.draft || typeof pause.draft !== 'object' || Array.isArray(pause.draft) || !Array.isArray(pause.queue)) issue();
+          for (const key of ['typed','masc','fem']) if (pause.draft[key] !== undefined && typeof pause.draft[key] !== 'string') issue();
+          const selection = pause.draft.selection;
+          if (selection !== undefined) {
+            if (!selection || typeof selection !== 'object' || Array.isArray(selection)) issue();
+            for (const key of ['start','end']) if (!Number.isSafeInteger(selection[key]) || selection[key] < 0) issue();
+            if (selection.end < selection.start || selection.id !== undefined && !['spell-input','spell-masc','spell-fem'].includes(selection.id) || selection.direction !== undefined && !['none','forward','backward'].includes(selection.direction)) issue();
+          }
+          function pausedEntry(item, active) {
+            entry(item, active);
+            const tasks = s.kind === 'learn' ? ['choice','listening-choice','exposure','recall'] : s.kind === 'review' ? ['recall'] : [s.kind];
+            if (item.wordId !== id || !tasks.includes(item.task) || item.relearn !== undefined && typeof item.relearn !== 'boolean') issue();
+            if (active && (item.answered !== (item.phase === 'answered') || item.revealed !== (item.phase !== 'question'))) issue();
+            if (active && item.answered && (!item.feedback || typeof item.feedback !== 'object' || Array.isArray(item.feedback))) issue();
+          }
+          if (pause.current !== null) pausedEntry(pause.current, true);
+          for (const item of pause.queue) pausedEntry(item, false);
+          if (pause.restoring && !pause.current) issue();
+        }
+      }
       for (const e of s.queue) entry(e, false);
       if (s.current) entry(s.current, true);
       if (!s.done && !s.current) issue();
       summary(s.summary);
       if (s.undo && !isUndo) {
+        if (s.undo.kind !== undefined && s.undo.kind !== 'manual-mastery') issue();
         if (!known.has(s.undo.wordId) || !Number.isInteger(s.undo.eventsLength) || s.undo.eventsLength < 0 || s.undo.eventsLength > state.events.length) issue();
         session(s.undo.session, true);
       }
@@ -148,6 +198,7 @@
       if(needsUpgrade(state.session))upgradePracticeSession(state.session,events);
       if(needsUpgrade(undoSession))upgradePracticeSession(undoSession,events.slice(0,offset+(state.session?.undo?.eventsLength||0)));
     }
+    if (syncMasteredSession(state) && !state.session.done) advance(state);
     return state;
   }
   function upgradePracticeSession(session, events) {
@@ -257,12 +308,13 @@
     const start=new Date(now);start.setHours(0,0,0,0);
     const events = recentEvents(state,+start).filter(e => selectedIds.has(e.wordId) && !e.undone && validTime(e.time) && dayKey(e.time) === today);
     const unique = kind => new Set(events.filter(e => kind.includes(e.kind)).map(e => e.wordId)).size;
-    const dueItems = rows.filter(x => state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt <= now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
-    const futureItems = rows.filter(x => state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt > now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
-    const acquired = rows.filter(x => state.cards[x.word.id].acquired).length;
-    const learning = rows.filter(x => state.cards[x.word.id].started && !state.cards[x.word.id].acquired).length;
+    const dueItems = rows.filter(x => !isManuallyMastered(state,x.word.id) && state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt <= now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
+    const futureItems = rows.filter(x => !isManuallyMastered(state,x.word.id) && state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt > now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
+    const acquired = rows.filter(x => state.cards[x.word.id].acquired || isManuallyMastered(state,x.word.id)).length;
+    const manualMastered = rows.filter(x => isManuallyMastered(state,x.word.id)).length;
+    const learning = rows.filter(x => !isManuallyMastered(state,x.word.id) && state.cards[x.word.id].started && !state.cards[x.word.id].acquired).length;
     const newToday = unique(['learn-acquired']), goalEnabled = state.settings.dailyGoalEnabled !== false;
-    return {total: rows.length, acquired, learned: acquired, unlearned: rows.length - acquired, new: rows.length - acquired, learning, due: dueItems.length, dueItems, futureItems, nextDueAt: futureItems.length ? futureItems[0].dueAt : null, newToday, learnedToday: newToday, reviewedToday: unique(['review']), spellingToday: unique(['spelling', 'dictation']), answersToday: events.length, goalEnabled, remainingGoal: goalEnabled ? Math.max(0, Number(state.settings.dailyGoal) - newToday) : rows.length - acquired, session: state.session};
+    return {total: rows.length, acquired, manualMastered, learned: acquired, unlearned: rows.length - acquired, new: rows.length - acquired, learning, due: dueItems.length, dueItems, futureItems, nextDueAt: futureItems.length ? futureItems[0].dueAt : null, newToday, learnedToday: newToday, reviewedToday: unique(['review']), spellingToday: unique(['spelling', 'dictation']), answersToday: events.length, goalEnabled, remainingGoal: goalEnabled ? Math.max(0, Number(state.settings.dailyGoal) - newToday) : rows.length - acquired, session: state.session};
   }
   function weeklyActivity(state, now) {
     now = time(now);
@@ -297,7 +349,7 @@
     if (isChoice && !opts.length) task = 'exposure';
     return {...entry, task, token: uid('answer'), phase: 'question', revealed: false, answered: false, assisted: false, choices: opts, feedback: null};
   }
-  function summaryOf(session) { return {kind: session.kind, total: session.wordIds.length, completed: session.completedIds.length, deferred: session.failedIds.length, answers: session.answers, wordIds: session.wordIds.slice(), completedIds: session.completedIds.slice(), failedIds: session.failedIds.slice(), mistakeIds: session.mistakeIds.slice(), ...(session.round ? {rounds: session.round} : {})}; }
+  function summaryOf(session) { return {kind: session.kind, total: session.wordIds.length, completed: completedIds(session).length, ...(session.masteredIds?.length ? {mastered:session.masteredIds.length,masteredIds:session.masteredIds.slice()} : {}), deferred: session.failedIds.length, answers: session.answers, wordIds: session.wordIds.slice(), completedIds: session.completedIds.slice(), failedIds: session.failedIds.slice(), mistakeIds: session.mistakeIds.slice(), ...(session.round ? {rounds: session.round} : {})}; }
   function finishQueue(state) {
     const s = state.session;
     // Not enough intervening words: defer remaining tasks rather than creating
@@ -307,17 +359,27 @@
   }
   function advance(state) {
     const s = state.session; if (!s || s.done) return state;
-    if (['spelling','dictation'].includes(s.kind) && !s.queue.length && s.completedIds.length < s.wordIds.length) {
+    syncMasteredSession(state);
+    if (['spelling','dictation'].includes(s.kind) && !s.queue.length && completedIds(s).length < s.wordIds.length) {
       // All failed words wait until the rest of this round is finished. Their
       // next-round attempt starts afresh, after the on-the-spot correction.
-      s.roundWordIds = s.wordIds.filter(id => !s.completedIds.includes(id) && !!find(state, id));
+      s.roundWordIds = s.wordIds.filter(id => !s.completedIds.includes(id) && !isManuallyMastered(state,id) && !!find(state, id));
       s.round++;
       s.retryIds = [];
       s.queue = s.roundWordIds.map(id => itemFor(state, id, s.kind, s.step));
     }
     const index = s.queue.findIndex(e => e.readyAfter <= s.step && !!find(state, e.wordId));
     if (index < 0) { finishQueue(state); return state; }
-    const entry = s.queue.splice(index, 1)[0]; s.current = newCurrent(state, entry); s.draft = {};
+    const entry = s.queue.splice(index, 1)[0], paused = s.masteryPauses?.[entry.wordId];
+    if (paused?.restoring && paused.current) {
+      const sameRound = paused.round === null || paused.round === s.round;
+      // A revealed/correction answer stays revealed/correction in its original
+      // round. Only a genuinely later round receives a fresh independent task.
+      s.current = sameRound ? clone(paused.current) : newCurrent(state, itemFor(state,entry.wordId,s.kind,s.step));
+      s.draft = sameRound ? clone(paused.draft) : {};
+      delete s.masteryPauses[entry.wordId];
+      if (!Object.keys(s.masteryPauses).length) delete s.masteryPauses;
+    } else { s.current = newCurrent(state, entry); s.draft = {}; }
     return state;
   }
   function start(state, kind, options, now) {
@@ -329,7 +391,7 @@
     if (!ids && (options.scope === 'mistakes' || options.onlyMistakes)) ids = prev && prev.mistakeIds || state.lastSummary && state.lastSummary.mistakeIds || [];
     if (!ids && options.scope === 'batch') ids = prev && prev.wordIds || state.lastSummary && state.lastSummary.wordIds || [];
     const idSet = Array.isArray(ids) ? new Set(ids) : null;
-    let pool = rows.filter(x => !idSet || idSet.has(x.word.id));
+    let pool = rows.filter(x => !isManuallyMastered(state,x.word.id) && (!idSet || idSet.has(x.word.id)));
     if (kind === 'learn') pool = pool.filter(x => !state.cards[x.word.id].acquired).sort((a, b) => Number(state.cards[b.word.id].started) - Number(state.cards[a.word.id].started));
     if (kind === 'review') pool = pool.filter(x => state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt <= now).sort((a,b) => state.cards[a.word.id].dueAt - state.cards[b.word.id].dueAt);
     if ((kind === 'spelling' || kind === 'dictation') && !idSet && !options.scope && !options.onlyMistakes) {
@@ -352,14 +414,16 @@
   }
   function current(state) {
     const s = state.session; if (!s) return null;
-    const progress = {completed: s.completedIds.length, total: s.wordIds.length, remaining: s.wordIds.length - s.completedIds.length, deferred: s.failedIds.length};
+    if (syncMasteredSession(state) && !s.done) advance(state);
+    const doneIds = completedIds(s);
+    const progress = {completed: doneIds.length, total: s.wordIds.length, remaining: s.wordIds.length - doneIds.length, deferred: s.failedIds.length, mastered:(s.masteredIds || []).length};
     if (['spelling','dictation'].includes(s.kind)) {
       progress.round = s.round || 1;
-      progress.dots = s.wordIds.map(wordId => ({wordId, status:s.completedIds.includes(wordId) ? 'passed' : !s.done && wordId === s.current?.wordId ? 'current' : 'pending'}));
+      progress.dots = s.wordIds.map(wordId => ({wordId, status:isManuallyMastered(state,wordId) ? 'mastered' : s.completedIds.includes(wordId) ? 'passed' : !s.done && wordId === s.current?.wordId ? 'current' : 'pending'}));
     }
     if (s.done) return {kind: 'summary', summary: summaryOf(s), sessionKind: s.kind, progress, total: s.wordIds.length};
     const c = s.current; if (!c) return null; const found = find(state, c.wordId); if (!found) return null;
-    return {...found, round: s.round || null, kind: c.task === 'exposure' ? 'recall' : c.task, task: c.task, phase: c.phase, revealed: c.revealed, answered: c.answered, assisted: c.assisted, correction: !!c.correction, choices: c.choices, options: c.choices, feedback: c.feedback, position: s.completedIds.length + 1, total: s.wordIds.length, sessionKind: s.kind, progress, relearn: !!c.relearn, token: c.token};
+    return {...found, round: s.round || null, kind: c.task === 'exposure' ? 'recall' : c.task, task: c.task, phase: c.phase, revealed: c.revealed, answered: c.answered, assisted: c.assisted, correction: !!c.correction, choices: c.choices, options: c.choices, feedback: c.feedback, position: doneIds.length + 1, total: s.wordIds.length, sessionKind: s.kind, progress, relearn: !!c.relearn, token: c.token};
   }
   function skipToRecall(state) {
     const s = state.session, c = s && s.current;
@@ -397,13 +461,63 @@
     if (s.failures[c.wordId] >= 3) addUnique(s.failedIds, c.wordId);
     else s.queue.push(itemFor(state, c.wordId, c.task === 'choice' || c.task === 'exposure' ? 'recall' : c.task, s.step + 3, {relearn: s.kind === 'review'}));
   }
-  function rememberUndo(state) {
-    const s = state.session, id = s.current.wordId, priorSession = clone(s); priorSession.undo = null;
-    s.undo = {session: priorSession, wordId: id, card: clone(state.cards[id]), skill: clone(state.skills[id]), eventsLength: state.events.length};
+  function rememberUndo(state, id = state.session.current.wordId, kind) {
+    const s = state.session, priorSession = clone(s); priorSession.undo = null;
+    s.undo = {session: priorSession, wordId: id, card: clone(state.cards[id]), skill: clone(state.skills[id]), eventsLength: state.events.length, ...(kind ? {kind} : {})};
+  }
+  function markMastered(state, id, now) {
+    now = time(now); ensureState(state, now);
+    if (!find(state, id)) throw new Error('词条不存在。');
+    if (isManuallyMastered(state,id)) return state;
+    if (state.session) rememberUndo(state,id,'manual-mastery');
+    const s = state.session;
+    if (s?.wordIds.includes(id) && !s.masteryPauses?.[id]) {
+      s.masteryPauses ||= {};
+      const active = s.current?.wordId === id;
+      s.masteryPauses[id] = {current:active ? clone(s.current) : null,queue:clone(s.queue.filter(item => item.wordId === id)),draft:active ? clone(s.draft || {}) : {},round:s.round || null,retry:!!s.retryIds?.includes(id),failed:s.failedIds.includes(id),roundWord:!!s.roundWordIds?.includes(id),restoring:false};
+    }
+    Object.assign(state.cards[id], {manualMastered:true,manualMasteredAt:now});
+    const moved = syncMasteredSession(state);
+    if (moved && !state.session.done) advance(state);
+    return state;
+  }
+  function unmarkMastered(state, id, now) {
+    now = time(now); ensureState(state, now);
+    if (!find(state, id)) throw new Error('词条不存在。');
+    if (!isManuallyMastered(state,id)) return state;
+    const s = state.session;
+    if (s) rememberUndo(state,id,'manual-mastery');
+    delete state.cards[id].manualMastered; delete state.cards[id].manualMasteredAt;
+    syncMasteredSession(state);
+    // Restore the suspended question/queue, not a newly unassisted answer.
+    // A corrected word awaiting the next round remains in that round's retry
+    // set instead of receiving a same-round independent pass.
+    if (s && s.wordIds.includes(id) && !s.completedIds.includes(id)) {
+      const paused = s.masteryPauses?.[id], sameRound = !paused || paused.round === null || paused.round === s.round;
+      s.queue = s.queue.filter(item => item.wordId !== id);
+      s.failedIds = s.failedIds.filter(wordId => wordId !== id);
+      if (paused?.failed) addUnique(s.failedIds,id);
+      if (paused?.retry && sameRound && s.retryIds) addUnique(s.retryIds,id);
+      if (paused?.roundWord && sameRound && s.roundWordIds) addUnique(s.roundWordIds,id);
+      if (paused?.current) {
+        paused.restoring = true;
+        s.queue.push(itemFor(state,id,paused.current.task,s.step),...(sameRound ? clone(paused.queue) : []));
+      } else if (paused?.queue.length && sameRound) s.queue.push(...clone(paused.queue));
+      else if (!paused || !sameRound || !paused.retry && !paused.failed) {
+        const record = state.cards[id], task = s.kind === 'learn' ? record.acquisitionStage === 'recall' ? 'recall' : state.settings.listening ? 'listening-choice' : 'choice' : s.kind === 'review' ? 'recall' : s.kind;
+        s.queue.push(itemFor(state,id,task,s.step));
+        if (s.roundWordIds) addUnique(s.roundWordIds,id);
+      }
+      if (!paused?.current && s.masteryPauses) { delete s.masteryPauses[id]; if (!Object.keys(s.masteryPauses).length) delete s.masteryPauses; }
+      if (s.queue.length || s.retryIds?.includes(id)) { s.done = false; s.summary = null; if (!s.current) advance(state); }
+      else if (s.done) s.summary = summaryOf(s);
+    } else if (s?.masteryPauses) { delete s.masteryPauses[id]; if (!Object.keys(s.masteryPauses).length) delete s.masteryPauses; }
+    return state;
   }
   function answer(state, input, now) {
     now = time(now); input = input || {}; const s = state.session, c = s && s.current;
     if (!s || s.done || !c) return {ok: false, reason: 'no-question'};
+    if (isManuallyMastered(state,c.wordId)) return {ok:false,reason:'manually-mastered'};
     if (c.answered || H.hasEvent(state,c.token)) return {ok: false, duplicate: true, reason: 'already-answered', feedback: c.feedback};
     const found = find(state, c.wordId); if (!found) return {ok: false, reason: 'missing-word'};
     if (c.task === 'recall' && !c.revealed) return {ok: false, reason: 'reveal-first'};
@@ -458,7 +572,9 @@
     return feedback;
   }
   function next(state, now) {
-    time(now); const s = state.session; if (!s || s.done || !s.current || !s.current.answered) return state;
+    time(now); const s = state.session; if (!s || s.done) return state;
+    if (syncMasteredSession(state)) return advance(state);
+    if (!s.current || !s.current.answered) return state;
     const c = s.current;
     if (['spelling','dictation'].includes(c.task) && c.feedback && c.feedback.next === 'retry') {
       // Also remove an old v4.0 delayed retry if this answered session was
@@ -477,9 +593,10 @@
     state.cards[snapshot.wordId] = snapshot.card;
     if (snapshot.skill === undefined || snapshot.skill === null) delete state.skills[snapshot.wordId]; else state.skills[snapshot.wordId] = snapshot.skill;
     state.events = state.events.slice(0, snapshot.eventsLength); state.session = snapshot.session; state.session.undo = null;
+    if (syncMasteredSession(state) && !state.session.done) advance(state);
     return {ok: true};
   }
   function finish(state) { if (state.session) state.lastSummary = summaryOf(state.session); state.session = null; return state; }
   function recentEvents(state,since=Date.now()-30*DAY){return H.recentEvents(state,since)}
-  return {VERSION, FSRS_VERSION: '5.4.2', DAY, createState, migrateLegacy, ensureState, validateRuntime, allWords, selected, sessionMatchesScope, stats, weeklyActivity, recentEvents, start, current, skipToRecall, reveal, answer, next, undo, finish, clearSession: finish, choices, checkSpelling, usesGenderPractice, normalize, dayKey};
+  return {VERSION, FSRS_VERSION: '5.4.2', DAY, createState, migrateLegacy, ensureState, validateRuntime, allWords, selected, isManuallyMastered, markMastered, unmarkMastered, sessionMatchesScope, stats, weeklyActivity, recentEvents, start, current, skipToRecall, reveal, answer, next, undo, finish, clearSession: finish, choices, checkSpelling, usesGenderPractice, normalize, dayKey};
 }));

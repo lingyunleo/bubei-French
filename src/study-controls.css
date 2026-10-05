@@ -3,10 +3,16 @@
 :root[data-shortcut-hints="hidden"] .shortcut-key,
 :root[data-shortcut-hints="hidden"] .desktop-hint,
 :root[data-shortcut-hints="hidden"] .desktop-sort-hint{display:none!important}
-.shortcut-note{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
-.shortcut-note>[data-action="undo"]{justify-self:start}
-.shortcut-note>.desktop-hint{grid-column:2;text-align:center}
+.study-actions .shortcut-note{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}
+.study-actions .shortcut-note>[data-action="undo"]{grid-column:1;justify-self:start}
+.study-actions .shortcut-note>.desktop-hint{grid-column:2;text-align:center}
+.study-actions .shortcut-note>.word-mastery-button{grid-column:3;justify-self:end;text-align:right}
+.word-mastery-button[aria-pressed=true]{color:var(--accent)}
+.word-mastery-tools{margin-top:12px}
+.word-mastery-tools .word-mastery-button{min-height:44px;padding:7px 0}
+.practice-dot.mastered{background:var(--accent2);border:1px solid var(--accent)}
+.mastery-stat{margin:12px 0 0}
 @media(max-width:760px),(hover:none) and (pointer:coarse){
  .shortcut-key,.desktop-hint,.desktop-sort-hint,.desktop-shortcut-setting{display:none!important}
- .shortcut-note{grid-template-columns:1fr}
+ .study-actions .shortcut-note{grid-template-columns:minmax(0,1fr) 0 minmax(0,1fr)}
 }

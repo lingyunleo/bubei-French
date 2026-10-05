@@ -23,6 +23,7 @@ I hope this website helps you remember French words more efficiently!
 ## Features
 
 - Learn new words in groups, schedule reviews with FSRS, and practise spelling, dictation, and words you got wrong.
+- Mark familiar words as known to exclude them from future study and practice. Unmark them in the library to restore their previous progress. Marking words as known does not count as actual practice.
 - Manage multiple word lists. Import Excel, CSV, or TSV files, or paste tabular text directly.
 - Import example sentences and translations, use your browser's text-to-speech, or add recordings you have permission to use.
 - Choose a Chinese, English, or French interface, with three styles—CLASSIQUE, ATELIER, and VERDURE—each available in light and dark modes.

@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "python3 scripts/build-release.py",
-    "test": "node tests/tooling-portability-review.cjs && node tests/runtime-validation.cjs && node tests/scene-lifecycle-review.cjs",
+    "test": "node tests/tooling-portability-review.cjs && node tests/runtime-validation.cjs && node tests/scene-lifecycle-review.cjs && node tests/mastery-engine-review.cjs",
     "test:browser": "node scripts/test-browser.cjs"
   },
   "devDependencies": {

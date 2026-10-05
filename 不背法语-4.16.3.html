@@ -776,12 +776,18 @@ body[data-carnet-phase=lesson] .carnet-scroll-cue::before{background:var(--line)
 :root[data-shortcut-hints="hidden"] .shortcut-key,
 :root[data-shortcut-hints="hidden"] .desktop-hint,
 :root[data-shortcut-hints="hidden"] .desktop-sort-hint{display:none!important}
-.shortcut-note{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
-.shortcut-note>[data-action="undo"]{justify-self:start}
-.shortcut-note>.desktop-hint{grid-column:2;text-align:center}
+.study-actions .shortcut-note{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}
+.study-actions .shortcut-note>[data-action="undo"]{grid-column:1;justify-self:start}
+.study-actions .shortcut-note>.desktop-hint{grid-column:2;text-align:center}
+.study-actions .shortcut-note>.word-mastery-button{grid-column:3;justify-self:end;text-align:right}
+.word-mastery-button[aria-pressed=true]{color:var(--accent)}
+.word-mastery-tools{margin-top:12px}
+.word-mastery-tools .word-mastery-button{min-height:44px;padding:7px 0}
+.practice-dot.mastered{background:var(--accent2);border:1px solid var(--accent)}
+.mastery-stat{margin:12px 0 0}
 @media(max-width:760px),(hover:none) and (pointer:coarse){
  .shortcut-key,.desktop-hint,.desktop-sort-hint,.desktop-shortcut-setting{display:none!important}
- .shortcut-note{grid-template-columns:1fr}
+ .study-actions .shortcut-note{grid-template-columns:minmax(0,1fr) 0 minmax(0,1fr)}
 }
 
 </style>
@@ -4217,7 +4223,16 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     // Undo can restore an older skill record even when the current one is valid.
     const undoSkill = out.session?.undo?.skill;
     if (undoSkill !== undefined && undoSkill !== null) validateSkills(undoSkill);
+    function validateMastery(card) {
+      if (!card) return;
+      if (card.manualMastered !== undefined && typeof card.manualMastered !== 'boolean') fail('标熟状态无效。');
+      if (card.manualMastered === true) num(card.manualMasteredAt,0,8640000000000000,'标熟时间');
+      else if (card.manualMasteredAt !== undefined) fail('标熟时间缺少对应的标熟状态。');
+    }
+    if (out.session?.undo?.kind === 'manual-mastery') map(out.session.undo.card, '标熟撤销记录');
+    validateMastery(out.session?.undo?.card);
     for (const card of Object.values(out.cards)) {
+      validateMastery(card);
       if (card.dueAt !== undefined && card.dueAt !== null) num(card.dueAt,0,8640000000000000,'词条复习时间');
       for (const key of ['started','acquired']) if (card[key] !== undefined && typeof card[key] !== 'boolean') fail('词条学习状态无效。');
       if (card.fsrs !== undefined && card.fsrs !== null) {
@@ -4254,6 +4269,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     out.trash = input.trash === undefined ? [] : input.trash;
     if (!Array.isArray(out.trash) || out.trash.length > 100 || out.trash.some(t => !plain(t) || !['deck','word'].includes(t.kind) || typeof t.id !== 'string')) fail('回收站数据无效。');
     for (const item of out.trash) {
+      for (const card of Object.values(item.attachments?.cards || {})) validateMastery(card);
       if (item.kind === 'word') item.word = C.validateWord(item.word);
       else {
         if (!plain(item.deck) || !Array.isArray(item.deck.words)) fail('回收站词表无效。');
@@ -4566,6 +4582,24 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return result;
   }
   function find(state, id) { return allWords(state).find(x => x.word.id === id) || null; }
+  function isManuallyMastered(state, id) { return safeId(id) && state?.cards?.[id]?.manualMastered === true; }
+  function completedIds(session) { return [...new Set([...session.completedIds, ...(session.masteredIds || [])])]; }
+  // A personal exemption does not fabricate an answer or overwrite FSRS. The
+  // original acquired/due/skills/history remain the source when it is cancelled.
+  function syncMasteredSession(state) {
+    const s = state.session; if (!s) return false;
+    const ids = s.wordIds.filter(id => isManuallyMastered(state, id));
+    if (!ids.length && !s.masteredIds) return false;
+    const excluded = new Set(ids);
+    if (ids.length) s.masteredIds = ids; else delete s.masteredIds;
+    s.queue = s.queue.filter(item => !excluded.has(item.wordId));
+    s.failedIds = s.failedIds.filter(id => !excluded.has(id));
+    for (const key of ['retryIds','roundWordIds']) if (s[key]) s[key] = s[key].filter(id => !excluded.has(id));
+    const removed = !!s.current && excluded.has(s.current.wordId);
+    if (removed) { s.current = null; s.draft = {}; }
+    if (s.done) s.summary = summaryOf(s);
+    return removed;
+  }
   function selected(state) {
     const ids = Array.isArray(state.settings.studyDeckIds) ? state.settings.studyDeckIds : [];
     return allWords(state).filter(x => ids.includes(x.deckId) && !x.word.needsConfirmation);
@@ -4612,13 +4646,17 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       for (const key of ['wordIds','completedIds','failedIds','mistakeIds']) if (!Array.isArray(value[key]) || value[key].some(id => !safeId(id)) || new Set(value[key]).size !== value[key].length) issue();
       const ids = new Set(value.wordIds);
       for (const key of ['completedIds','failedIds','mistakeIds']) if (value[key].some(id => !ids.has(id))) issue();
-      if (value.total !== value.wordIds.length || value.completed !== value.completedIds.length || value.deferred !== value.failedIds.length) issue();
+      if (value.masteredIds !== undefined || value.mastered !== undefined) {
+        if (!Array.isArray(value.masteredIds) || value.masteredIds.some(id => !ids.has(id)) || new Set(value.masteredIds).size !== value.masteredIds.length || value.mastered !== value.masteredIds.length) issue();
+      }
+      if (value.total !== value.wordIds.length || value.completed !== completedIds(value).length || value.deferred !== value.failedIds.length) issue();
       if (value.rounds !== undefined && (!Number.isSafeInteger(value.rounds) || value.rounds < 1)) issue();
     }
     function session(s, isUndo) {
       if (!s || typeof s !== 'object' || !safeId(s.id) || !['learn','review','spelling','dictation'].includes(s.kind) || !Number.isInteger(s.step) || s.step < 0 || !Number.isInteger(s.answers) || s.answers < 0 || typeof s.done !== 'boolean') issue();
       for (const key of ['wordIds','completedIds','failedIds','mistakeIds']) if (!Array.isArray(s[key]) || s[key].some(id => !known.has(id)) || new Set(s[key]).size !== s[key].length) issue();
       const batch = new Set(s.wordIds);
+      if (s.masteredIds !== undefined && (!Array.isArray(s.masteredIds) || s.masteredIds.some(id => !batch.has(id)) || new Set(s.masteredIds).size !== s.masteredIds.length)) issue();
       for (const key of ['completedIds','failedIds','mistakeIds']) if (s[key].some(id => !batch.has(id))) issue();
       if (!Array.isArray(s.queue) || !s.failures || typeof s.failures !== 'object') issue();
       if (s.round !== undefined || s.roundWordIds !== undefined || s.retryIds !== undefined) {
@@ -4633,11 +4671,39 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         if (active && (!safeId(e.token) || !['question','revealed','answered'].includes(e.phase) || typeof e.revealed !== 'boolean' || typeof e.answered !== 'boolean' || typeof e.assisted !== 'boolean' || !Array.isArray(e.choices))) issue();
         if (active && e.choices.some(x => !x || typeof x.id !== 'string' || typeof x.text !== 'string')) issue();
       }
+      if (s.masteryPauses !== undefined) {
+        if (!s.masteryPauses || typeof s.masteryPauses !== 'object' || Array.isArray(s.masteryPauses)) issue();
+        for (const [id,pause] of Object.entries(s.masteryPauses)) {
+          if (!batch.has(id) || !pause || typeof pause !== 'object' || Array.isArray(pause) || Object.keys(pause).some(key => !['current','queue','draft','round','retry','failed','roundWord','restoring'].includes(key))) issue();
+          for (const key of ['retry','failed','roundWord','restoring']) if (typeof pause[key] !== 'boolean') issue();
+          const practice = ['spelling','dictation'].includes(s.kind);
+          if (practice ? !Number.isSafeInteger(pause.round) || pause.round < 1 || pause.round > s.round : pause.round !== null) issue();
+          if (!pause.draft || typeof pause.draft !== 'object' || Array.isArray(pause.draft) || !Array.isArray(pause.queue)) issue();
+          for (const key of ['typed','masc','fem']) if (pause.draft[key] !== undefined && typeof pause.draft[key] !== 'string') issue();
+          const selection = pause.draft.selection;
+          if (selection !== undefined) {
+            if (!selection || typeof selection !== 'object' || Array.isArray(selection)) issue();
+            for (const key of ['start','end']) if (!Number.isSafeInteger(selection[key]) || selection[key] < 0) issue();
+            if (selection.end < selection.start || selection.id !== undefined && !['spell-input','spell-masc','spell-fem'].includes(selection.id) || selection.direction !== undefined && !['none','forward','backward'].includes(selection.direction)) issue();
+          }
+          function pausedEntry(item, active) {
+            entry(item, active);
+            const tasks = s.kind === 'learn' ? ['choice','listening-choice','exposure','recall'] : s.kind === 'review' ? ['recall'] : [s.kind];
+            if (item.wordId !== id || !tasks.includes(item.task) || item.relearn !== undefined && typeof item.relearn !== 'boolean') issue();
+            if (active && (item.answered !== (item.phase === 'answered') || item.revealed !== (item.phase !== 'question'))) issue();
+            if (active && item.answered && (!item.feedback || typeof item.feedback !== 'object' || Array.isArray(item.feedback))) issue();
+          }
+          if (pause.current !== null) pausedEntry(pause.current, true);
+          for (const item of pause.queue) pausedEntry(item, false);
+          if (pause.restoring && !pause.current) issue();
+        }
+      }
       for (const e of s.queue) entry(e, false);
       if (s.current) entry(s.current, true);
       if (!s.done && !s.current) issue();
       summary(s.summary);
       if (s.undo && !isUndo) {
+        if (s.undo.kind !== undefined && s.undo.kind !== 'manual-mastery') issue();
         if (!known.has(s.undo.wordId) || !Number.isInteger(s.undo.eventsLength) || s.undo.eventsLength < 0 || s.undo.eventsLength > state.events.length) issue();
         session(s.undo.session, true);
       }
@@ -4667,6 +4733,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if(needsUpgrade(state.session))upgradePracticeSession(state.session,events);
       if(needsUpgrade(undoSession))upgradePracticeSession(undoSession,events.slice(0,offset+(state.session?.undo?.eventsLength||0)));
     }
+    if (syncMasteredSession(state) && !state.session.done) advance(state);
     return state;
   }
   function upgradePracticeSession(session, events) {
@@ -4776,12 +4843,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     const start=new Date(now);start.setHours(0,0,0,0);
     const events = recentEvents(state,+start).filter(e => selectedIds.has(e.wordId) && !e.undone && validTime(e.time) && dayKey(e.time) === today);
     const unique = kind => new Set(events.filter(e => kind.includes(e.kind)).map(e => e.wordId)).size;
-    const dueItems = rows.filter(x => state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt <= now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
-    const futureItems = rows.filter(x => state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt > now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
-    const acquired = rows.filter(x => state.cards[x.word.id].acquired).length;
-    const learning = rows.filter(x => state.cards[x.word.id].started && !state.cards[x.word.id].acquired).length;
+    const dueItems = rows.filter(x => !isManuallyMastered(state,x.word.id) && state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt <= now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
+    const futureItems = rows.filter(x => !isManuallyMastered(state,x.word.id) && state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt > now).map(x => ({...x, dueAt: state.cards[x.word.id].dueAt})).sort((a, b) => a.dueAt - b.dueAt);
+    const acquired = rows.filter(x => state.cards[x.word.id].acquired || isManuallyMastered(state,x.word.id)).length;
+    const manualMastered = rows.filter(x => isManuallyMastered(state,x.word.id)).length;
+    const learning = rows.filter(x => !isManuallyMastered(state,x.word.id) && state.cards[x.word.id].started && !state.cards[x.word.id].acquired).length;
     const newToday = unique(['learn-acquired']), goalEnabled = state.settings.dailyGoalEnabled !== false;
-    return {total: rows.length, acquired, learned: acquired, unlearned: rows.length - acquired, new: rows.length - acquired, learning, due: dueItems.length, dueItems, futureItems, nextDueAt: futureItems.length ? futureItems[0].dueAt : null, newToday, learnedToday: newToday, reviewedToday: unique(['review']), spellingToday: unique(['spelling', 'dictation']), answersToday: events.length, goalEnabled, remainingGoal: goalEnabled ? Math.max(0, Number(state.settings.dailyGoal) - newToday) : rows.length - acquired, session: state.session};
+    return {total: rows.length, acquired, manualMastered, learned: acquired, unlearned: rows.length - acquired, new: rows.length - acquired, learning, due: dueItems.length, dueItems, futureItems, nextDueAt: futureItems.length ? futureItems[0].dueAt : null, newToday, learnedToday: newToday, reviewedToday: unique(['review']), spellingToday: unique(['spelling', 'dictation']), answersToday: events.length, goalEnabled, remainingGoal: goalEnabled ? Math.max(0, Number(state.settings.dailyGoal) - newToday) : rows.length - acquired, session: state.session};
   }
   function weeklyActivity(state, now) {
     now = time(now);
@@ -4816,7 +4884,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (isChoice && !opts.length) task = 'exposure';
     return {...entry, task, token: uid('answer'), phase: 'question', revealed: false, answered: false, assisted: false, choices: opts, feedback: null};
   }
-  function summaryOf(session) { return {kind: session.kind, total: session.wordIds.length, completed: session.completedIds.length, deferred: session.failedIds.length, answers: session.answers, wordIds: session.wordIds.slice(), completedIds: session.completedIds.slice(), failedIds: session.failedIds.slice(), mistakeIds: session.mistakeIds.slice(), ...(session.round ? {rounds: session.round} : {})}; }
+  function summaryOf(session) { return {kind: session.kind, total: session.wordIds.length, completed: completedIds(session).length, ...(session.masteredIds?.length ? {mastered:session.masteredIds.length,masteredIds:session.masteredIds.slice()} : {}), deferred: session.failedIds.length, answers: session.answers, wordIds: session.wordIds.slice(), completedIds: session.completedIds.slice(), failedIds: session.failedIds.slice(), mistakeIds: session.mistakeIds.slice(), ...(session.round ? {rounds: session.round} : {})}; }
   function finishQueue(state) {
     const s = state.session;
     // Not enough intervening words: defer remaining tasks rather than creating
@@ -4826,17 +4894,27 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
   function advance(state) {
     const s = state.session; if (!s || s.done) return state;
-    if (['spelling','dictation'].includes(s.kind) && !s.queue.length && s.completedIds.length < s.wordIds.length) {
+    syncMasteredSession(state);
+    if (['spelling','dictation'].includes(s.kind) && !s.queue.length && completedIds(s).length < s.wordIds.length) {
       // All failed words wait until the rest of this round is finished. Their
       // next-round attempt starts afresh, after the on-the-spot correction.
-      s.roundWordIds = s.wordIds.filter(id => !s.completedIds.includes(id) && !!find(state, id));
+      s.roundWordIds = s.wordIds.filter(id => !s.completedIds.includes(id) && !isManuallyMastered(state,id) && !!find(state, id));
       s.round++;
       s.retryIds = [];
       s.queue = s.roundWordIds.map(id => itemFor(state, id, s.kind, s.step));
     }
     const index = s.queue.findIndex(e => e.readyAfter <= s.step && !!find(state, e.wordId));
     if (index < 0) { finishQueue(state); return state; }
-    const entry = s.queue.splice(index, 1)[0]; s.current = newCurrent(state, entry); s.draft = {};
+    const entry = s.queue.splice(index, 1)[0], paused = s.masteryPauses?.[entry.wordId];
+    if (paused?.restoring && paused.current) {
+      const sameRound = paused.round === null || paused.round === s.round;
+      // A revealed/correction answer stays revealed/correction in its original
+      // round. Only a genuinely later round receives a fresh independent task.
+      s.current = sameRound ? clone(paused.current) : newCurrent(state, itemFor(state,entry.wordId,s.kind,s.step));
+      s.draft = sameRound ? clone(paused.draft) : {};
+      delete s.masteryPauses[entry.wordId];
+      if (!Object.keys(s.masteryPauses).length) delete s.masteryPauses;
+    } else { s.current = newCurrent(state, entry); s.draft = {}; }
     return state;
   }
   function start(state, kind, options, now) {
@@ -4848,7 +4926,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (!ids && (options.scope === 'mistakes' || options.onlyMistakes)) ids = prev && prev.mistakeIds || state.lastSummary && state.lastSummary.mistakeIds || [];
     if (!ids && options.scope === 'batch') ids = prev && prev.wordIds || state.lastSummary && state.lastSummary.wordIds || [];
     const idSet = Array.isArray(ids) ? new Set(ids) : null;
-    let pool = rows.filter(x => !idSet || idSet.has(x.word.id));
+    let pool = rows.filter(x => !isManuallyMastered(state,x.word.id) && (!idSet || idSet.has(x.word.id)));
     if (kind === 'learn') pool = pool.filter(x => !state.cards[x.word.id].acquired).sort((a, b) => Number(state.cards[b.word.id].started) - Number(state.cards[a.word.id].started));
     if (kind === 'review') pool = pool.filter(x => state.cards[x.word.id].acquired && validTime(state.cards[x.word.id].dueAt) && state.cards[x.word.id].dueAt <= now).sort((a,b) => state.cards[a.word.id].dueAt - state.cards[b.word.id].dueAt);
     if ((kind === 'spelling' || kind === 'dictation') && !idSet && !options.scope && !options.onlyMistakes) {
@@ -4871,14 +4949,16 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
   function current(state) {
     const s = state.session; if (!s) return null;
-    const progress = {completed: s.completedIds.length, total: s.wordIds.length, remaining: s.wordIds.length - s.completedIds.length, deferred: s.failedIds.length};
+    if (syncMasteredSession(state) && !s.done) advance(state);
+    const doneIds = completedIds(s);
+    const progress = {completed: doneIds.length, total: s.wordIds.length, remaining: s.wordIds.length - doneIds.length, deferred: s.failedIds.length, mastered:(s.masteredIds || []).length};
     if (['spelling','dictation'].includes(s.kind)) {
       progress.round = s.round || 1;
-      progress.dots = s.wordIds.map(wordId => ({wordId, status:s.completedIds.includes(wordId) ? 'passed' : !s.done && wordId === s.current?.wordId ? 'current' : 'pending'}));
+      progress.dots = s.wordIds.map(wordId => ({wordId, status:isManuallyMastered(state,wordId) ? 'mastered' : s.completedIds.includes(wordId) ? 'passed' : !s.done && wordId === s.current?.wordId ? 'current' : 'pending'}));
     }
     if (s.done) return {kind: 'summary', summary: summaryOf(s), sessionKind: s.kind, progress, total: s.wordIds.length};
     const c = s.current; if (!c) return null; const found = find(state, c.wordId); if (!found) return null;
-    return {...found, round: s.round || null, kind: c.task === 'exposure' ? 'recall' : c.task, task: c.task, phase: c.phase, revealed: c.revealed, answered: c.answered, assisted: c.assisted, correction: !!c.correction, choices: c.choices, options: c.choices, feedback: c.feedback, position: s.completedIds.length + 1, total: s.wordIds.length, sessionKind: s.kind, progress, relearn: !!c.relearn, token: c.token};
+    return {...found, round: s.round || null, kind: c.task === 'exposure' ? 'recall' : c.task, task: c.task, phase: c.phase, revealed: c.revealed, answered: c.answered, assisted: c.assisted, correction: !!c.correction, choices: c.choices, options: c.choices, feedback: c.feedback, position: doneIds.length + 1, total: s.wordIds.length, sessionKind: s.kind, progress, relearn: !!c.relearn, token: c.token};
   }
   function skipToRecall(state) {
     const s = state.session, c = s && s.current;
@@ -4916,13 +4996,63 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     if (s.failures[c.wordId] >= 3) addUnique(s.failedIds, c.wordId);
     else s.queue.push(itemFor(state, c.wordId, c.task === 'choice' || c.task === 'exposure' ? 'recall' : c.task, s.step + 3, {relearn: s.kind === 'review'}));
   }
-  function rememberUndo(state) {
-    const s = state.session, id = s.current.wordId, priorSession = clone(s); priorSession.undo = null;
-    s.undo = {session: priorSession, wordId: id, card: clone(state.cards[id]), skill: clone(state.skills[id]), eventsLength: state.events.length};
+  function rememberUndo(state, id = state.session.current.wordId, kind) {
+    const s = state.session, priorSession = clone(s); priorSession.undo = null;
+    s.undo = {session: priorSession, wordId: id, card: clone(state.cards[id]), skill: clone(state.skills[id]), eventsLength: state.events.length, ...(kind ? {kind} : {})};
+  }
+  function markMastered(state, id, now) {
+    now = time(now); ensureState(state, now);
+    if (!find(state, id)) throw new Error('词条不存在。');
+    if (isManuallyMastered(state,id)) return state;
+    if (state.session) rememberUndo(state,id,'manual-mastery');
+    const s = state.session;
+    if (s?.wordIds.includes(id) && !s.masteryPauses?.[id]) {
+      s.masteryPauses ||= {};
+      const active = s.current?.wordId === id;
+      s.masteryPauses[id] = {current:active ? clone(s.current) : null,queue:clone(s.queue.filter(item => item.wordId === id)),draft:active ? clone(s.draft || {}) : {},round:s.round || null,retry:!!s.retryIds?.includes(id),failed:s.failedIds.includes(id),roundWord:!!s.roundWordIds?.includes(id),restoring:false};
+    }
+    Object.assign(state.cards[id], {manualMastered:true,manualMasteredAt:now});
+    const moved = syncMasteredSession(state);
+    if (moved && !state.session.done) advance(state);
+    return state;
+  }
+  function unmarkMastered(state, id, now) {
+    now = time(now); ensureState(state, now);
+    if (!find(state, id)) throw new Error('词条不存在。');
+    if (!isManuallyMastered(state,id)) return state;
+    const s = state.session;
+    if (s) rememberUndo(state,id,'manual-mastery');
+    delete state.cards[id].manualMastered; delete state.cards[id].manualMasteredAt;
+    syncMasteredSession(state);
+    // Restore the suspended question/queue, not a newly unassisted answer.
+    // A corrected word awaiting the next round remains in that round's retry
+    // set instead of receiving a same-round independent pass.
+    if (s && s.wordIds.includes(id) && !s.completedIds.includes(id)) {
+      const paused = s.masteryPauses?.[id], sameRound = !paused || paused.round === null || paused.round === s.round;
+      s.queue = s.queue.filter(item => item.wordId !== id);
+      s.failedIds = s.failedIds.filter(wordId => wordId !== id);
+      if (paused?.failed) addUnique(s.failedIds,id);
+      if (paused?.retry && sameRound && s.retryIds) addUnique(s.retryIds,id);
+      if (paused?.roundWord && sameRound && s.roundWordIds) addUnique(s.roundWordIds,id);
+      if (paused?.current) {
+        paused.restoring = true;
+        s.queue.push(itemFor(state,id,paused.current.task,s.step),...(sameRound ? clone(paused.queue) : []));
+      } else if (paused?.queue.length && sameRound) s.queue.push(...clone(paused.queue));
+      else if (!paused || !sameRound || !paused.retry && !paused.failed) {
+        const record = state.cards[id], task = s.kind === 'learn' ? record.acquisitionStage === 'recall' ? 'recall' : state.settings.listening ? 'listening-choice' : 'choice' : s.kind === 'review' ? 'recall' : s.kind;
+        s.queue.push(itemFor(state,id,task,s.step));
+        if (s.roundWordIds) addUnique(s.roundWordIds,id);
+      }
+      if (!paused?.current && s.masteryPauses) { delete s.masteryPauses[id]; if (!Object.keys(s.masteryPauses).length) delete s.masteryPauses; }
+      if (s.queue.length || s.retryIds?.includes(id)) { s.done = false; s.summary = null; if (!s.current) advance(state); }
+      else if (s.done) s.summary = summaryOf(s);
+    } else if (s?.masteryPauses) { delete s.masteryPauses[id]; if (!Object.keys(s.masteryPauses).length) delete s.masteryPauses; }
+    return state;
   }
   function answer(state, input, now) {
     now = time(now); input = input || {}; const s = state.session, c = s && s.current;
     if (!s || s.done || !c) return {ok: false, reason: 'no-question'};
+    if (isManuallyMastered(state,c.wordId)) return {ok:false,reason:'manually-mastered'};
     if (c.answered || H.hasEvent(state,c.token)) return {ok: false, duplicate: true, reason: 'already-answered', feedback: c.feedback};
     const found = find(state, c.wordId); if (!found) return {ok: false, reason: 'missing-word'};
     if (c.task === 'recall' && !c.revealed) return {ok: false, reason: 'reveal-first'};
@@ -4977,7 +5107,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return feedback;
   }
   function next(state, now) {
-    time(now); const s = state.session; if (!s || s.done || !s.current || !s.current.answered) return state;
+    time(now); const s = state.session; if (!s || s.done) return state;
+    if (syncMasteredSession(state)) return advance(state);
+    if (!s.current || !s.current.answered) return state;
     const c = s.current;
     if (['spelling','dictation'].includes(c.task) && c.feedback && c.feedback.next === 'retry') {
       // Also remove an old v4.0 delayed retry if this answered session was
@@ -4996,11 +5128,12 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     state.cards[snapshot.wordId] = snapshot.card;
     if (snapshot.skill === undefined || snapshot.skill === null) delete state.skills[snapshot.wordId]; else state.skills[snapshot.wordId] = snapshot.skill;
     state.events = state.events.slice(0, snapshot.eventsLength); state.session = snapshot.session; state.session.undo = null;
+    if (syncMasteredSession(state) && !state.session.done) advance(state);
     return {ok: true};
   }
   function finish(state) { if (state.session) state.lastSummary = summaryOf(state.session); state.session = null; return state; }
   function recentEvents(state,since=Date.now()-30*DAY){return H.recentEvents(state,since)}
-  return {VERSION, FSRS_VERSION: '5.4.2', DAY, createState, migrateLegacy, ensureState, validateRuntime, allWords, selected, sessionMatchesScope, stats, weeklyActivity, recentEvents, start, current, skipToRecall, reveal, answer, next, undo, finish, clearSession: finish, choices, checkSpelling, usesGenderPractice, normalize, dayKey};
+  return {VERSION, FSRS_VERSION: '5.4.2', DAY, createState, migrateLegacy, ensureState, validateRuntime, allWords, selected, isManuallyMastered, markMastered, unmarkMastered, sessionMatchesScope, stats, weeklyActivity, recentEvents, start, current, skipToRecall, reveal, answer, next, undo, finish, clearSession: finish, choices, checkSpelling, usesGenderPractice, normalize, dayKey};
 }));
 
 </script><script data-bundled-source="audio.js">
@@ -7789,7 +7922,7 @@ const icon=(name)=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+({sun:'<circle
 const btn=(label,action,kind='',extra='')=>'<button type="button" class="button '+kind+'" data-action="'+action+'" '+extra+'>'+label+'</button>';
 const rows=()=>state.decks.flatMap(deck=>deck.words.map(word=>({word,deck})));
 const findWord=id=>rows().find(x=>x.word.id===id);
-const scoped=()=>rows().filter(x=>state.settings.studyDeckIds.includes(x.deck.id)&&!x.word.needsConfirmation);
+const scoped=()=>rows().filter(x=>state.settings.studyDeckIds.includes(x.deck.id)&&!x.word.needsConfirmation&&!E.isManuallyMastered(state,x.word.id));
 const date=n=>n?new Date(n).toLocaleDateString(locale(),{month:'short',day:'numeric'}):'—';
 function clearToasts(){clearTimeout(toastTimer);$('#toast').classList.remove('visible');const notice=$('#modal-toast');if(notice){notice.hidden=true;notice.textContent=''}}
 function unsavedMessage(){return storage.persistent===false?(storage.warning||t('更改尚未保存到浏览器，请导出备份。','Changes are not saved in this browser. Export a backup.','Modifications non enregistrées dans le navigateur. Exportez une sauvegarde.')):''}
@@ -7824,7 +7957,7 @@ function change(fn,{renderAfter=true,snapshot=false,guard=null,recover=false,req
 }
 function studyIdentity(){return {sessionId:state.session?.id,token:state.session?.current?.token}}
 function sameQuestion(s,key){return !!key.token&&s.session?.id===key.sessionId&&s.session?.current?.token===key.token&&!s.session.done}
-function questionChange(fn,options={}){const key=studyIdentity();return change(fn,{...options,guard:s=>sameQuestion(s,key)&&(!options.guard||options.guard(s))})}
+function questionChange(fn,options={}){if(wordMasteryPending.size)return Promise.resolve(false);const key=studyIdentity();return change(fn,{...options,guard:s=>sameQuestion(s,key)&&(!options.guard||options.guard(s))})}
 function contexts(word){const own=state.contexts[word.id];if(own)return own;return word.example?[{id:'base-'+word.id,text:word.example,translation:word.exampleZh||'',source:word.source||t('词条例句','Word example','Exemple du mot'),sourceUrl:'',author:'',license:'',audioUrl:'',audioId:'',type:'tts',favorite:false,origin:'default'}]:[]}
 function contextAt(wordId,contextId){const item=findWord(wordId);return item?contexts(item.word).find(c=>c.id===contextId):null}
 function highlight(text,word,explicit){const target=explicit||word.french||word.spell||word.masc;const safe=esc(text);if(!target)return safe;const re=esc(target).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');try{return safe.replace(new RegExp(re,'giu'),m=>'<mark>'+m+'</mark>')}catch(_){return safe}}
@@ -7892,7 +8025,7 @@ function shellClassic(body){const nav=navigation();const page=nav.find(n=>n.id==
 function dayKey(n){const d=new Date(n);return [d.getFullYear(),d.getMonth()+1,d.getDate()].join('-')}
 function todayEvents(){return E.recentEvents(state,Date.now()-2*864e5).filter(e=>!e.undone&&dayKey(e.time||e.at||0)===dayKey(Date.now()))}
 function stats(){const raw=E.stats(state);return raw}
-function dueOf(id){const c=state.cards[id];return c?.dueAt||c?.due||c?.card?.due||c?.fsrs?.due||null}
+function dueOf(id){if(E.isManuallyMastered(state,id))return null;const c=state.cards[id];return c?.dueAt||c?.due||c?.card?.due||c?.fsrs?.due||null}
 function todayClassic(){const s=stats();const today=todayEvents();const total=scoped().length;const free=state.settings.dailyGoalEnabled===false;const newLeft=free?(s.new||0):Math.min(s.new||0,s.remainingGoal||0);const due=s.due??s.dueCount??0;const learned=s.todayNew??s.learnedToday??0;const reviewed=s.todayReview??s.reviewedToday??0;
  const names=state.decks.filter(d=>state.settings.studyDeckIds.includes(d.id)).map(d=>d.name).join(' + ');
  return '<section class="hero"><div class="eyebrow">BONJOUR.</div><h1>'+t('每天一点，<br>让法语更熟练。','A little every day.<br>More confident in French.','Un peu chaque jour.<br>Plus à l’aise en français.')+'</h1><div class="scope">'+t('当前范围','Study selection','Sélection')+' · '+esc(names||t('尚未选择词表','No decks selected','Aucune liste sélectionnée'))+' <button class="text-button" data-action="scope">'+t('调整','Change','Modifier')+'</button></div></section>'+
@@ -7900,7 +8033,7 @@ function todayClassic(){const s=stats();const today=todayEvents();const total=sc
  '<div class="today-grid '+(free?'free-rhythm':'')+'"><article class="card task-card"><div class="row between" style="width:100%"><span>'+(free?t('新词 · 随时可学','New · at your own pace','Nouveaux · à votre rythme'):t('新词 · 今日剩余','New · remaining today','Nouveaux · restants'))+'</span>'+icon('book')+'</div><div class="count">'+Math.max(0,newLeft)+'</div>'+btn(free?t('按需学习','Learn at your pace','Apprendre à votre rythme')+icon('arrow'):t('开始学习','Start learning','Apprendre')+icon('arrow'),'start-learn',free?'soft':'primary',!total||!newLeft?'disabled':'')+'</article><article class="card task-card review"><div class="row between" style="width:100%"><span>'+t('到期 · 等待回忆','Due · ready to recall','À revoir · rappel')+'</span>'+icon('repeat')+'</div><div class="count">'+due+'</div>'+btn(t('开始复习','Start review','Réviser')+icon('arrow'),'start-review',free?'primary':'soft',!due?'disabled':'')+'</article></div>'+
  (free?'<p class="rhythm-note">'+(due?t('今天先完成到期复习，新词随时想学就学。','Complete due reviews today; learn new words whenever you like.','Faites les révisions dues ; les nouveaux mots restent à votre rythme.'):t('到期复习已完成。今天学多少新词，由你决定。','All due reviews are done. Choose how many new words to learn.','Les révisions dues sont terminées. Choisissez votre rythme.') )+'</p>':'')+
  (!state.decks.length?'<div class="card empty" style="margin-top:22px"><h2>'+t('让第一张词表住进来','Make room for your first words','Accueillez vos premiers mots')+'</h2><p>'+t('导入自己的词表，也可以从 50 个基础词开始学习。','Import your own list, or start with 50 everyday words.','Importez votre liste, ou commencez avec 50 mots courants.')+'</p><div class="row wrap" style="justify-content:center">'+btn(t('导入词表','Import words','Importer une liste'),'import','primary')+btn(t('恢复备份','Restore backup','Restaurer'),'restore')+btn(t('体验基础词表','Try starter words','Essayer les mots de base'),'seed')+'</div></div>':'')+
- '<div class="today-bottom"><section class="card"><div class="row between"><h3>'+t('每一点努力，都算数','Every little bit counts','Chaque petit pas compte')+'</h3><span class="pill">'+new Date().toLocaleDateString(locale(),{month:'short',day:'numeric'})+'</span></div><div class="stats-row"><div class="stat"><strong>'+learned+'</strong><span>'+t('新学词条','New words','Mots appris')+'</span></div><div class="stat"><strong>'+reviewed+'</strong><span>'+t('正式复习','Reviews','Révisions')+'</span></div><div class="stat"><strong>'+(s.todaySpelling??s.spellingToday??today.filter(e=>e.kind==='spelling'||e.kind==='dictation').length)+'</strong><span>'+t('专项练习','Skill practice','Entraînement')+'</span></div></div>'+weekBars()+'</section><section class="card"><h3>'+t('按自己的需要练习','Practise your way','À votre rythme')+'</h3><p class="muted" style="font-size:12px;margin:11px 0 15px">'+t('每轮首次独立拼对才通过；错词订正后，下一轮再练。','Pass on the first independent try in a round; corrected words return next round.','Validez sans aide du premier coup ; les mots corrigés reviennent au tour suivant.')+'</p><div class="practice-options"><div>'+btn(t('看中文拼写','Spell from meaning','Écrire à partir du sens'),'start-spelling','small',!total?'disabled':'')+'<p>'+t('看中文释义，回忆法语怎么写。','Read the meaning and recall the French spelling.','Lisez le sens et retrouvez l’orthographe française.')+'</p></div><div>'+btn(t('听音听写','Listen and write','Dictée'),'start-dictation','small',!total?'disabled':'')+'<p>'+t('只听法语发音，写出听到的词。','Listen to French and write what you hear.','Écoutez le français et écrivez le mot entendu.')+'</p></div></div><div class="scope-list">'+(free?t('不设每日新词目标','No daily new-word goal','Sans objectif quotidien'):t('每日目标','Daily goal','Objectif quotidien')+' '+state.settings.dailyGoal)+' · '+t('每组新词','New words per group','Mots par groupe')+' '+state.settings.newBatch+'</div></section></div>';
+ '<div class="today-bottom"><section class="card"><div class="row between"><h3>'+t('每一点努力，都算数','Every little bit counts','Chaque petit pas compte')+'</h3><span class="pill">'+new Date().toLocaleDateString(locale(),{month:'short',day:'numeric'})+'</span></div><div class="stats-row"><div class="stat"><strong>'+learned+'</strong><span>'+t('新学词条','New words','Mots appris')+'</span></div><div class="stat"><strong>'+reviewed+'</strong><span>'+t('正式复习','Reviews','Révisions')+'</span></div><div class="stat"><strong>'+(s.todaySpelling??s.spellingToday??today.filter(e=>e.kind==='spelling'||e.kind==='dictation').length)+'</strong><span>'+t('专项练习','Skill practice','Entraînement')+'</span></div></div>'+(s.manualMastered?'<p class="license-note mastery-stat">'+t('当前范围已标熟','Marked as known in this selection','Marqués comme connus dans cette sélection')+' · '+s.manualMastered+'<br>'+t('标熟不计入作答次数；今日与最近一周仍按实际学习记录统计。','Marking a word as known does not count as an answer. Daily and weekly activity reflects actual practice.','Le marquage ne compte pas comme une réponse. Les activités du jour et de la semaine reflètent les exercices réalisés.')+'</p>':'')+weekBars()+'</section><section class="card"><h3>'+t('按自己的需要练习','Practise your way','À votre rythme')+'</h3><p class="muted" style="font-size:12px;margin:11px 0 15px">'+t('每轮首次独立拼对才通过；错词订正后，下一轮再练。','Pass on the first independent try in a round; corrected words return next round.','Validez sans aide du premier coup ; les mots corrigés reviennent au tour suivant.')+'</p><div class="practice-options"><div>'+btn(t('看中文拼写','Spell from meaning','Écrire à partir du sens'),'start-spelling','small',!total?'disabled':'')+'<p>'+t('看中文释义，回忆法语怎么写。','Read the meaning and recall the French spelling.','Lisez le sens et retrouvez l’orthographe française.')+'</p></div><div>'+btn(t('听音听写','Listen and write','Dictée'),'start-dictation','small',!total?'disabled':'')+'<p>'+t('只听法语发音，写出听到的词。','Listen to French and write what you hear.','Écoutez le français et écrivez le mot entendu.')+'</p></div></div><div class="scope-list">'+(free?t('不设每日新词目标','No daily new-word goal','Sans objectif quotidien'):t('每日目标','Daily goal','Objectif quotidien')+' '+state.settings.dailyGoal)+' · '+t('每组新词','New words per group','Mots par groupe')+' '+state.settings.newBatch+'</div></section></div>';
 }
 
 function weeklyDetail(day){return '<div class="weekly-selected-date">'+esc(new Date(day.date).toLocaleDateString(locale(),{month:'long',day:'numeric',weekday:'short'}))+'</div><dl class="weekly-counts"><div><dt>'+t('当日新学','New words learned','Nouveaux mots appris')+'</dt><dd><span class="weekly-count-wrap"><strong data-week-count="learned">'+day.learned+'</strong></span>'+t('词','words','mots')+'</dd></div><div><dt>'+t('当日复习','Words reviewed','Mots révisés')+'</dt><dd><span class="weekly-count-wrap"><strong data-week-count="reviewed">'+day.reviewed+'</strong></span>'+t('词','words','mots')+'</dd></div></dl>'}
@@ -7952,7 +8085,7 @@ function releaseWeeklyGesture(event,cancelled=false){
  gesture.chart.classList.remove('is-scrubbing');
 }
 
-function library(){if(selectedDeck&&!state.decks.some(d=>d.id===selectedDeck))selectedDeck='';return '<div class="toolbar" id="library-import-zone"><input type="search" id="word-search" placeholder="'+t('搜索法语、释义或用法','Search words, meanings or usage','Rechercher un mot, un sens…')+'" value="'+esc(search)+'" aria-label="'+t('搜索词库','Search library','Rechercher')+'">'+btn(icon('plus')+t('导入','Import','Importer'),'import','primary')+btn(t('词表管理','Manage decks','Gérer les listes'),'manage')+'</div><div class="library-layout"><aside class="deck-list"><button class="deck-button '+(!selectedDeck?'active':'')+'" data-action="select-deck" data-id="">'+t('全部词条','All words','Tous les mots')+'<small>'+rows().length+'</small></button>'+state.decks.map(d=>'<button class="deck-button '+(selectedDeck===d.id?'active':'')+'" data-action="select-deck" data-id="'+esc(d.id)+'"><span>'+esc(d.name)+'</span><small>'+d.words.length+'</small></button>').join('')+'</aside><div><div class="row between wrap" style="margin-bottom:12px"><select id="word-filter" aria-label="'+t('筛选','Filter','Filtrer')+'">'+[['all',t('所有状态','All states','Tous les états')],['due',t('到期复习','Due for review','À réviser')],['weak',t('最近需巩固','Recent difficulties','Difficultés récentes')],['unconfirmed',t('核对学习项','Check study items','Vérifier les exercices')]].map(([v,l])=>'<option value="'+v+'" '+(filter===v?'selected':'')+'>'+l+'</option>').join('')+'</select>'+btn(t('添加词条','Add word','Ajouter un mot'),'add-word','small',!state.decks.length?'disabled':'')+'</div><div id="library-results">'+wordResults()+'</div></div></div>'}
+function library(){if(selectedDeck&&!state.decks.some(d=>d.id===selectedDeck))selectedDeck='';return '<div class="toolbar" id="library-import-zone"><input type="search" id="word-search" placeholder="'+t('搜索法语、释义或用法','Search words, meanings or usage','Rechercher un mot, un sens…')+'" value="'+esc(search)+'" aria-label="'+t('搜索词库','Search library','Rechercher')+'">'+btn(icon('plus')+t('导入','Import','Importer'),'import','primary')+btn(t('词表管理','Manage decks','Gérer les listes'),'manage')+'</div><div class="library-layout"><aside class="deck-list"><button class="deck-button '+(!selectedDeck?'active':'')+'" data-action="select-deck" data-id="">'+t('全部词条','All words','Tous les mots')+'<small>'+rows().length+'</small></button>'+state.decks.map(d=>'<button class="deck-button '+(selectedDeck===d.id?'active':'')+'" data-action="select-deck" data-id="'+esc(d.id)+'"><span>'+esc(d.name)+'</span><small>'+d.words.length+'</small></button>').join('')+'</aside><div><div class="row between wrap" style="margin-bottom:12px"><select id="word-filter" aria-label="'+t('筛选','Filter','Filtrer')+'">'+[['all',t('所有状态','All states','Tous les états')],['due',t('到期复习','Due for review','À réviser')],['mastered',t('已标熟','Marked as known','Marqués comme connus')],['weak',t('最近需巩固','Recent difficulties','Difficultés récentes')],['unconfirmed',t('核对学习项','Check study items','Vérifier les exercices')]].map(([v,l])=>'<option value="'+v+'" '+(filter===v?'selected':'')+'>'+l+'</option>').join('')+'</select>'+btn(t('添加词条','Add word','Ajouter un mot'),'add-word','small',!state.decks.length?'disabled':'')+'</div><div id="library-results">'+wordResults()+'</div></div></div>'}
 function recentWeakWords(){
  const latest=new Map(),now=Date.now(),cutoff=now-30*86400000;
  for(const e of (E.recentEvents?.(state)||state.events)){
@@ -7964,9 +8097,9 @@ function recentWeakWords(){
 }
 function wordResults(){
  const weak=filter==='weak'?recentWeakWords():null;
- const items=rows().filter(({word:w,deck})=>{if(selectedDeck&&deck.id!==selectedDeck)return false;if(search&&![w.french,w.meaning,w.usage,w.fullMeaning,w.fullUsage].join(' ').toLocaleLowerCase().includes(search.toLocaleLowerCase()))return false;if(filter==='unconfirmed'&&!w.needsConfirmation)return false;if(filter==='due'&&(!dueOf(w.id)||new Date(dueOf(w.id)).getTime()>Date.now()))return false;if(weak&&!weak.has(w.id))return false;return true});
+ const items=rows().filter(({word:w,deck})=>{if(selectedDeck&&deck.id!==selectedDeck)return false;if(search&&![w.french,w.meaning,w.usage,w.fullMeaning,w.fullUsage].join(' ').toLocaleLowerCase().includes(search.toLocaleLowerCase()))return false;if(filter==='unconfirmed'&&!w.needsConfirmation)return false;if(filter==='mastered'&&!E.isManuallyMastered(state,w.id))return false;if(filter==='due'&&(!dueOf(w.id)||new Date(dueOf(w.id)).getTime()>Date.now()))return false;if(weak&&(!weak.has(w.id)||E.isManuallyMastered(state,w.id)))return false;return true});
  const pages=Math.max(1,Math.ceil(items.length/100));libraryPage=Math.min(Math.max(0,libraryPage),pages-1);const start=libraryPage*100;
- return '<div class="library-summary" tabindex="-1" role="status">'+items.length+' '+t('个词条','words','mots')+(items.length?' · '+(start+1)+'–'+Math.min(start+100,items.length):'')+'</div>'+(filter==='weak'?'<p class="filter-explanation">'+t('近 30 天内，回忆、拼写或听写的最近一次尝试仍需巩固。该题型独立通过后移出；跟写订正不算独立通过。','The latest recall, spelling or dictation attempt within 30 days still needs practice. An independent pass clears that skill; copying a correction does not.','La dernière tentative de rappel, d’orthographe ou de dictée sous 30 jours reste à renforcer. Une réussite autonome valide cette compétence, contrairement à une correction recopiée.')+'</p>':'')+'<div class="word-list">'+(items.length?items.slice(start,start+100).map(({word:w,deck})=>'<button class="word-row" data-action="word" data-id="'+esc(w.id)+'"><span><span class="fr" lang="fr">'+esc(w.french)+'</span><br><small class="muted">'+esc(w.pos)+' · '+esc(deck.name)+'</small></span><span class="zh">'+esc(w.meaning)+'</span><span class="due">'+(w.needsConfirmation?t('核对学习项','Check study item','Vérifier l’exercice'):dueOf(w.id)?date(dueOf(w.id)):t('未安排','Not scheduled','Non planifié'))+'</span></button>').join(''):'<div class="empty">'+t('没有符合条件的词条','No matching words','Aucun mot correspondant')+'</div>')+'</div>'+(pages>1?'<nav class="library-pagination" aria-label="'+t('词库分页','Library pages','Pages du vocabulaire')+'">'+btn(t('上一页','Previous','Précédent'),'library-page','small','data-page="'+(libraryPage-1)+'" '+(!libraryPage?'disabled':''))+'<span>'+ (libraryPage+1)+' / '+pages+'</span>'+btn(t('下一页','Next','Suivant'),'library-page','small','data-page="'+(libraryPage+1)+'" '+(libraryPage===pages-1?'disabled':''))+'</nav>':'');
+ return '<div class="library-summary" tabindex="-1" role="status">'+items.length+' '+t('个词条','words','mots')+(items.length?' · '+(start+1)+'–'+Math.min(start+100,items.length):'')+'</div>'+(filter==='mastered'?'<p class="filter-explanation">'+t('已标熟的词不再安排学习或练习。打开词条即可取消标熟，恢复原学习进度。','Words marked as known are excluded from future study and practice. Open a word to unmark it and restore its previous progress.','Les mots marqués comme connus sont retirés des exercices. Ouvrez un mot pour annuler le marquage et retrouver sa progression.')+'</p>':'')+(filter==='weak'?'<p class="filter-explanation">'+t('近 30 天内，回忆、拼写或听写的最近一次尝试仍需巩固。该题型独立通过后移出；跟写订正不算独立通过。','The latest recall, spelling or dictation attempt within 30 days still needs practice. An independent pass clears that skill; copying a correction does not.','La dernière tentative de rappel, d’orthographe ou de dictée sous 30 jours reste à renforcer. Une réussite autonome valide cette compétence, contrairement à une correction recopiée.')+'</p>':'')+'<div class="word-list">'+(items.length?items.slice(start,start+100).map(({word:w,deck})=>'<button class="word-row" data-action="word" data-id="'+esc(w.id)+'"><span><span class="fr" lang="fr">'+esc(w.french)+'</span><br><small class="muted">'+esc(w.pos)+' · '+esc(deck.name)+'</small></span><span class="zh">'+esc(w.meaning)+'</span><span class="due">'+(E.isManuallyMastered(state,w.id)?t('已标熟','Marked as known','Marqué comme connu'):w.needsConfirmation?t('核对学习项','Check study item','Vérifier l’exercice'):dueOf(w.id)?date(dueOf(w.id)):t('未安排','Not scheduled','Non planifié'))+'</span></button>').join(''):'<div class="empty">'+t('没有符合条件的词条','No matching words','Aucun mot correspondant')+'</div>')+'</div>'+(pages>1?'<nav class="library-pagination" aria-label="'+t('词库分页','Library pages','Pages du vocabulaire')+'">'+btn(t('上一页','Previous','Précédent'),'library-page','small','data-page="'+(libraryPage-1)+'" '+(!libraryPage?'disabled':''))+'<span>'+ (libraryPage+1)+' / '+pages+'</span>'+btn(t('下一页','Next','Suivant'),'library-page','small','data-page="'+(libraryPage+1)+'" '+(libraryPage===pages-1?'disabled':''))+'</nav>':'');
 }
 function refreshLibraryResults(){const results=$('#library-results');if(results)results.innerHTML=wordResults();$$('.deck-button').forEach(b=>{const active=b.dataset.id===selectedDeck;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))})}
 
@@ -8107,16 +8240,16 @@ function study(){const c=E.current(state);if(!c){view='today';return shell(today
  else if(c.kind==='recall'&&shown&&c.task!=='exposure')actions+='<div class="ratings">'+btn(t('认识','Know it','Je connais')+'<kbd class="shortcut-key" aria-hidden="true">Q</kbd>','rate','primary','data-rating="3" title="'+t('揭晓前顺利想起','Recalled before revealing','Rappelé avant la réponse')+'"')+btn(t('模糊','Unsure','Hésitant')+'<kbd class="shortcut-key" aria-hidden="true">W</kbd>','rate','','data-rating="2" title="'+t('想起但费力；没想起请选择忘记了','Recalled with effort; if not recalled, choose Forgot','Rappelé avec effort ; sinon choisissez Oublié')+'"')+btn(t('忘记了','Forgot','Oublié')+'<kbd class="shortcut-key" aria-hidden="true">E</kbd>','rate','','data-rating="1" title="'+t('揭晓前没想起','Not recalled before revealing','Non rappelé avant la réponse')+'"')+'</div>';
  else if(shown)actions+=btn(c.task==='exposure'?t('读懂了，继续','Understood, continue','Compris, continuer'):spelling?t('重新拼写','Try spelling again','Réécrire le mot'):t('借助答案，稍后再试','Use answer; retry later','Avec la réponse ; réessayer'),'assisted-next','primary study-main-action');
  else if(spelling)actions+='<div class="spelling-controls">'+btn(t('查看答案','Show answer','Voir la réponse'),'show-spelling-answer','soft')+btn(t('检查拼写','Check spelling',"Vérifier l’orthographe"),'check-spelling','primary')+'</div>';else actions+=btn(choice?t('看答案','Show answer','Voir la réponse'):t('揭晓答案','Reveal answer','Révéler la réponse'),'reveal','primary study-main-action');
- actions+='<div class="shortcut-note"><button class="text-button" data-action="undo" '+(!state.session.undo?'disabled':'')+'>'+t('撤销','Undo','Annuler')+'</button><span class="desktop-hint shortcut-key" aria-hidden="true">'+t('Space 下一步 · P 单词 · S 例句','Space next · P word · S example','Espace suite · P mot · S exemple')+'</span></div>';
+ actions+='<div class="shortcut-note"><button class="text-button" data-action="undo" '+(!state.session.undo?'disabled':'')+'>'+t('撤销','Undo','Annuler')+'</button><span class="desktop-hint shortcut-key" aria-hidden="true">'+t('Space 下一步 · P 单词 · S 例句','Space next · P word · S example','Espace suite · P mot · S exemple')+'</span>'+masteryButton(w.id)+'</div>';
  return '<div class="study-shell '+(spelling&&!shown?'is-spelling':comparison?'has-spelling-error':'')+'">'+top+'<div class="study-area"><div class="study-question">'+question+'</div><div class="study-actions">'+actions+'</div></div></div>';
 }
 function studyOptions(){const c=E.current(state);if(!c?.word)return;const row=(key,title,detail,desktop=false)=>'<div class="study-option-row '+(desktop?'desktop-shortcut-setting':'')+'"><div><strong>'+title+'</strong><p>'+detail+'</p></div><button type="button" class="preference-switch" role="switch" aria-label="'+title+'" aria-checked="'+Boolean(state.settings[key])+'" data-action="study-setting" data-setting="'+key+'"><span aria-hidden="true"></span></button></div>';openModal(t('学习选项','Study options',"Options d’étude"),'<div class="study-preferences">'+row('showShortcutHints',t('显示快捷键提示','Keyboard hints','Raccourcis visibles'),t('电脑端显示 Q / W / E、P 和 S 等提示。','Show Q / W / E, P and S hints on desktop.','Afficher Q / W / E, P et S sur ordinateur.'),true)+row('autoWord',t('自动朗读单词','Auto-play words','Lecture automatique des mots'),t('看中文拼写时不播放，避免提前透露答案。','Stays silent when spelling from meaning.','Silencieux pendant l’orthographe à partir du sens.'))+row('autoExample',t('自动朗读例句','Auto-play examples','Lecture automatique des exemples'),t('揭晓答案后播放首条例句。','Play the first example after revealing the answer.','Lire le premier exemple après la réponse.'))+'</div><p class="license-note study-options-note">'+t('更改自动保存。朗读设置从下一题或下一次揭晓生效；听写题仍正常播放题目。','Changes are saved automatically. Playback settings apply at the next question or reveal; dictation prompts still play.','Modifications enregistrées. La lecture change à la prochaine question ou réponse ; les dictées restent audibles.')+'</p>'+(['choice','listening-choice'].includes(c.kind)||c.task==='exposure'?btn(t('这个词很熟，直接回忆','Skip recognition; recall it','Passer au rappel'),'skip-and-close','soft study-skip'):'')+ '<div class="theme-study-entry">'+themeButton()+'</div><div class="desktop-shortcut-setting">'+btn(t('查看全部快捷键','All keyboard shortcuts','Tous les raccourcis'),'help','text-button small')+'</div>','',true)}
 async function toggleStudySetting(button){const key=button.dataset.setting;if(!['showShortcutHints','autoWord','autoExample'].includes(key))return;button.disabled=true;try{const ok=await change(s=>{s.settings[key]=!s.settings[key];return s},{renderAfter:false});if(ok){theme();button.setAttribute('aria-checked',String(state.settings[key]));if(key!=='showShortcutHints'&&!state.settings[key])stopAudio();}}finally{button.disabled=false}}
-function practiceProgress(c){const pr=c.progress,dots=pr.dots||state.session.wordIds.map(wordId=>({wordId,status:state.session.completedIds.includes(wordId)?'passed':wordId===c.word.id?'current':'pending'}));return '<div class="practice-progress"><span class="round-count">'+t('第 '+(pr.round||1)+' 轮','Round '+(pr.round||1),'Tour '+(pr.round||1))+'</span><button class="text-button" data-action="progress" aria-label="'+esc(t('本组通过','Passed this group','Validés')+' '+pr.completed+' / '+pr.total)+'">'+pr.completed+' / '+pr.total+'</button><div class="practice-dots" role="list" aria-label="'+t('本组拼写进度','Spelling progress','Progression orthographique')+'">'+dots.map((d,i)=>'<span role="listitem" class="practice-dot '+d.status+'" aria-label="'+esc((i+1)+' · '+(d.status==='passed'?t('已通过','Passed','Validé'):d.status==='current'?t('当前词，尚未通过','Current, not yet passed','En cours, non validé'):t('尚未通过','Not yet passed','Non validé')))+'"></span>').join('')+'</div></div>'}
+function practiceProgress(c){const pr=c.progress,dots=pr.dots||state.session.wordIds.map(wordId=>({wordId,status:state.session.completedIds.includes(wordId)?'passed':wordId===c.word.id?'current':'pending'}));return '<div class="practice-progress"><span class="round-count">'+t('第 '+(pr.round||1)+' 轮','Round '+(pr.round||1),'Tour '+(pr.round||1))+'</span><button class="text-button" data-action="progress" aria-label="'+esc(t('本组完成','Completed this group','Terminés dans ce groupe')+' '+pr.completed+' / '+pr.total)+'">'+pr.completed+' / '+pr.total+'</button><div class="practice-dots" role="list" aria-label="'+t('本组拼写进度','Spelling progress','Progression orthographique')+'">'+dots.map((d,i)=>'<span role="listitem" class="practice-dot '+d.status+'" aria-label="'+esc((i+1)+' · '+(d.status==='mastered'?t('已标熟','Marked as known','Marqué comme connu'):d.status==='passed'?t('已通过','Passed','Validé'):d.status==='current'?t('当前词，尚未通过','Current, not yet passed','En cours, non validé'):t('尚未通过','Not yet passed','Non validé')))+'"></span>').join('')+'</div></div>'}
 function spellDiff(actual,expected){const display=v=>String(v||'').normalize('NFC').replace(/[’‘ʼ]/g,"'").replace(/[‐‑]/g,'-').replace(/\s+/g,' ').trim();const a=[...display(actual)],b=[...display(expected)],same=(x,y)=>x.toLocaleLowerCase('fr')===y.toLocaleLowerCase('fr');let left=0;while(left<a.length&&left<b.length&&same(a[left],b[left]))left++;let right=0;while(right<a.length-left&&right<b.length-left&&same(a[a.length-1-right],b[b.length-1-right]))right++;const paint=(v,tag)=>esc(v.slice(0,left).join(''))+(v.length-left-right?'<'+tag+'>'+esc(v.slice(left,v.length-right).join(''))+'</'+tag+'>':'')+esc(right?v.slice(-right).join(''):'');return {actual:paint(a,'del'),expected:paint(b,'mark')}}
 function spellingComparison(feedback){if(feedback.correct)return '';const details=feedback.details||[{label:'word',actual:feedback.actual||'',expected:feedback.expected||'',correct:false}];return '<section class="spelling-comparison" aria-label="'+t('拼写对比','Spelling comparison','Comparaison orthographique')+'"><h3>'+t('核对拼写','Check the spelling','Vérifiez l’orthographe')+'</h3>'+details.map(d=>{const diff=d.correct?{actual:esc(d.actual),expected:esc(d.expected)}:spellDiff(d.actual,d.expected);return '<div class="spelling-comparison-row '+(d.correct?'correct':'wrong')+'">'+(d.label==='word'?'':'<div class="spelling-field-label">'+(d.label==='masc'?t('阳性','Masculine','Masculin'):t('阴性','Feminine','Féminin'))+(d.correct?' · ✓':'')+'</div>')+'<div class="answer-grid"><div><span class="answer-label">'+t('你的拼写','Your answer','Votre réponse')+'</span><div class="typed-answer" lang="fr">'+(diff.actual||'<span class="muted">'+t('未填写','Empty','Vide')+'</span>')+'</div></div><div><span class="answer-label">'+t('正确拼写','Correct spelling','Bonne orthographe')+'</span><div class="expected-answer" lang="fr">'+diff.expected+'</div></div></div></div>'}).join('')+'</section>'}
 
-function summary(c){const s=c.summary;const ids=s.wordIds||[];return '<div class="study-shell"><header class="study-top"><button class="text-button" data-action="end-session">'+t('返回首页','Back home','Accueil')+'</button><span>'+typeLabel(c.sessionKind)+'</span><button class="text-button" data-action="undo" '+(!state.session?.undo?'disabled':'')+'>'+t('撤销最后一次','Undo last answer','Annuler la dernière réponse')+'</button></header><div class="study-question"><div class="summary-layout"><header class="summary-heading">'+(!s.deferred&&s.completed>0?'<div class="completion-mark" data-completion-key="'+esc(state.session?.id||ids.join('|'))+'" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M12 25l8 8 17-18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>':'')+'<div class="eyebrow">UN PEU, CHAQUE JOUR.</div><h1>'+t('这一组，先到这里。','A good place to pause.','Une pause bien méritée.')+'</h1><p class="muted">'+t('完成','Completed','Terminés')+' '+esc(s.completed)+' · '+t('待巩固','To consolidate','À renforcer')+' '+esc(s.deferred)+' · '+t('作答','Answers','Réponses')+' '+esc(s.answers)+'</p></header><div class="card"><div class="summary-list">'+ids.map(id=>{const row=findWord(id);return row?'<div class="summary-word"><button class="text-button" data-action="word" data-id="'+esc(id)+'"><strong lang="fr">'+esc(row.word.french)+'</strong></button><span class="muted">'+(s.failedIds.includes(id)?t('稍后巩固','Practise later','À renforcer'):c.sessionKind==='learn'||c.sessionKind==='review'?t('下次','Next','Prochaine')+' '+date(dueOf(id)):t('已练习','Practised','Travaillé'))+'</span></div>':''}).join('')+'</div></div><div class="summary-actions">'+(c.sessionKind==='learn'||c.sessionKind==='review'?btn(t('拼全部','Spell this group','Écrire ce groupe'),'spell-batch','primary')+btn(t('只拼错词','Spell difficult words','Écrire les mots difficiles'),'spell-mistakes','',!(s.mistakeIds||[]).length?'disabled':''):btn(t('再练一组','Another group','Un autre groupe'),'another-group','primary')+btn(t('本次结束','Finish for now','Terminer'),'end-session'))+'</div>'+(c.sessionKind==='learn'||c.sessionKind==='review'?'<div class="row wrap" style="justify-content:center">'+btn(t('继续下一组','Next group','Groupe suivant'),'another-group','soft')+btn(t('本次结束','Finish for now','Terminer'),'end-session')+'</div>':'')+'<p class="license-note" style="text-align:center;margin-top:22px">'+t('待巩固不代表失败，下次从这里接着走。','Words to consolidate are a place to continue, not a failure.','Les mots à renforcer sont un point de départ, pas un échec.')+'</p></div></div></div>'}
+function summary(c){const s=c.summary;const ids=s.wordIds||[],available=ids.filter(id=>!E.isManuallyMastered(state,id)),mistakes=(s.mistakeIds||[]).filter(id=>!E.isManuallyMastered(state,id));return '<div class="study-shell"><header class="study-top"><button class="text-button" data-action="end-session">'+t('返回首页','Back home','Accueil')+'</button><span>'+typeLabel(c.sessionKind)+'</span><button class="text-button" data-action="undo" '+(!state.session?.undo?'disabled':'')+'>'+t('撤销最后一次','Undo last action','Annuler la dernière action')+'</button></header><div class="study-question"><div class="summary-layout"><header class="summary-heading">'+(!s.deferred&&s.completed>0?'<div class="completion-mark" data-completion-key="'+esc(state.session?.id||ids.join('|'))+'" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M12 25l8 8 17-18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>':'')+'<div class="eyebrow">UN PEU, CHAQUE JOUR.</div><h1>'+t('这一组，先到这里。','A good place to pause.','Une pause bien méritée.')+'</h1><p class="muted">'+t('完成','Completed','Terminés')+' '+esc(s.completed)+(s.mastered?' · '+t('其中标熟','including marked known','dont marqués connus')+' '+esc(s.mastered):'')+' · '+t('待巩固','To consolidate','À renforcer')+' '+esc(s.deferred)+' · '+t('作答','Answers','Réponses')+' '+esc(s.answers)+'</p></header><div class="card"><div class="summary-list">'+ids.map(id=>{const row=findWord(id);return row?'<div class="summary-word"><button class="text-button" data-action="word" data-id="'+esc(id)+'"><strong lang="fr">'+esc(row.word.french)+'</strong></button><span class="muted">'+(E.isManuallyMastered(state,id)?t('已标熟','Marked as known','Marqué comme connu'):s.failedIds.includes(id)?t('稍后巩固','Practise later','À renforcer'):c.sessionKind==='learn'||c.sessionKind==='review'?t('下次','Next','Prochaine')+' '+date(dueOf(id)):t('已练习','Practised','Travaillé'))+'</span></div>':''}).join('')+'</div></div><div class="summary-actions">'+(c.sessionKind==='learn'||c.sessionKind==='review'?btn(t('拼全部','Spell this group','Écrire ce groupe'),'spell-batch','primary',!available.length?'disabled':'')+btn(t('只拼错词','Spell difficult words','Écrire les mots difficiles'),'spell-mistakes','',!mistakes.length?'disabled':''):btn(t('再练一组','Another group','Un autre groupe'),'another-group','primary')+btn(t('本次结束','Finish for now','Terminer'),'end-session'))+'</div>'+(c.sessionKind==='learn'||c.sessionKind==='review'?'<div class="row wrap" style="justify-content:center">'+btn(t('继续下一组','Next group','Groupe suivant'),'another-group','soft')+btn(t('本次结束','Finish for now','Terminer'),'end-session')+'</div>':'')+'<p class="license-note" style="text-align:center;margin-top:22px">'+t('待巩固不代表失败，下次从这里接着走。','Words to consolidate are a place to continue, not a failure.','Les mots à renforcer sont un point de départ, pas un échec.')+'</p></div></div></div>'}
 function autoplay(){if(CARNET&&document.body.dataset.carnetView!=='app'||view!=='study'||$('#modal').open)return;const c=E.current(state);if(!c?.word)return;const key=c.token+'-'+c.phase;if(key===audioToken)return;audioToken=key;stopAudio();const soon=play=>setTimeout(()=>{if(audioToken!==key||view!=='study'||CARNET&&document.body.dataset.carnetView!=='app')return;if($('#modal').open||CARNET&&document.querySelector('dialog[open]')){audioToken='';return}play()},60);if(['dictation','listening-choice'].includes(c.kind)&&c.phase==='question'){soon(()=>sayWord(false));return}if(c.revealed&&state.settings.autoExample){const ex=contexts(c.word)[0];if(ex){soon(()=>playContext(c.word.id,ex.id));return}}if(state.settings.autoWord&&(c.revealed||!['spelling','dictation'].includes(c.kind)))soon(()=>sayWord(false))}
 function typed(){const w=E.current(state)?.word;return w&&E.usesGenderPractice(w)?{masc:$('#spell-masc')?.value||'',fem:$('#spell-fem')?.value||''}:$('#spell-input')?.value||''}
 function spellingDraft(){
@@ -8141,7 +8274,7 @@ async function flushDraft(){
  }
 }
 async function begin(kind,options={}){const sessionId=state.session?.id,navigation=navigationRevision,modal=modalRevision;const stillHere=()=>navigation===navigationRevision&&modal===modalRevision;stopAudio();if(!await flushDraft()||state.session?.id!==sessionId||!stillHere())return;if(state.session&&!E.sessionMatchesScope(state))options={...options,replace:true};if(state.session&&!state.session.done&&!options.replace){if(state.session.kind===kind){view='study';audioToken='';render();return}openModal(t('切换练习方式','Switch practice mode','Changer d’exercice'),'<p>'+t('当前还有一组未完成的','You have an unfinished group:','Un groupe est en cours :')+' <strong>'+typeLabel(state.session.kind)+'</strong>。</p><p class="muted" style="margin-top:12px">'+t('切换后会开始新一组，已完成的学习记录保留。原组未完成的词可在之后重新练习。','Switching starts a new group and keeps completed records. Unfinished words can be practised later.','Le changement lance un nouveau groupe et conserve les résultats. Les mots restants pourront être retravaillés.')+'</p>',btn(t('取消','Cancel','Annuler'),'close')+btn(t('继续原练习','Resume current group','Reprendre le groupe'),'resume-close')+btn(t('切换到','Switch to','Passer à')+' '+typeLabel(kind),'confirm-switch','primary','data-kind="'+esc(kind)+'"'),true);return}const success=await change(s=>{E.start(s,kind,options);return s},{renderAfter:false,snapshot:options.replace===true,guard:s=>s.session?.id===sessionId&&stillHere()});if(success&&stillHere()){view='study';audioToken='';render()}}
-async function answer(input,advance=false){stopAudio();clearTimeout(draftTimer);const draft=spellingDraft();const ok=await questionChange(s=>{if(s.session.current.answered)return false;if(draft)s.session.draft=draft;const feedback=E.answer(s,input);if(!feedback.ok)throw new Error(feedback.reason||'Answer failed');s.session.draft={};if(advance)E.next(s);return s});if(ok&&advance)focusSpelling();return ok}
+async function answer(input,advance=false){if(wordMasteryPending.size)return false;stopAudio();clearTimeout(draftTimer);const draft=spellingDraft();const ok=await questionChange(s=>{if(s.session.current.answered)return false;if(draft)s.session.draft=draft;const feedback=E.answer(s,input);if(!feedback.ok)throw new Error(feedback.reason||'Answer failed');s.session.draft={};if(advance)E.next(s);return s});if(ok&&advance)focusSpelling();return ok}
 function focusSpelling(){if(!window.VocabViewport?.isMobile()&&matchMedia('(min-width:761px)').matches)($('#spell-input')||$('#spell-masc'))?.focus({preventScroll:true})}
 function restoreSpellingDraftFocus(){const saved=state.session?.draft?.selection,input=(saved&&document.getElementById(saved.id))||$('#spell-input')||$('#spell-masc');if(!input?.matches('.spell-input'))return;input.focus({preventScroll:true});if(saved&&Number.isInteger(saved.start)&&Number.isInteger(saved.end))input.setSelectionRange(saved.start,saved.end,saved.direction||'none');window.VocabViewport?.refresh()}
 function openModal(title,body,footer='',compact=false,motionOptions=null){modalRevision++;window.VocabDeckSort?.cancel();clearToasts();const m=$('#modal');if(!m.open)focusBeforeModal=document.activeElement;m.classList.toggle('compact',compact);$('#modal-title').textContent=title;$('#modal-body').innerHTML=body;$('#modal-footer').innerHTML=footer||btn(t('完成','Done','Terminé'),'close');if(window.VocabMotion)window.VocabMotion.openModal(m,motionOptions?.origin,{shared:!!motionOptions?.shared});else if(!m.open)m.showModal();placeAudioControl();$('#modal-body').scrollTop=0;if(unsavedMessage())toast(unsavedMessage())}
@@ -8172,11 +8305,40 @@ function fullWordContent(w){
   +(!hasFullEntry(w)?'<p class="full-entry-note">'+t('此词条暂未附带更多完整内容。可使用整理提示词补全原文件，再选择“合并并更新现有词表”，保留学习进度。','This entry has no additional full content yet. Prepare the source with the import prompt, then merge into the existing deck to keep progress.','Ce mot ne contient pas encore de détails supplémentaires. Utilisez les consignes d’import puis fusionnez avec la liste existante pour conserver les progrès.')+'</p>':'')
   +(source||rawNotes?'<details class="full-entry-source"><summary>'+t('核对原始资料','Check original source','Vérifier le texte source')+'</summary>'+section(t('原始释义','Original definition','Définition originale'),source)+section(t('原始笔记','Original notes','Notes originales'),rawNotes)+'</details>':'')+'</article>';
 }
-function fullWordModal(id,origin=null){const found=findWord(id);if(!found)return;if(view==='study'&&!E.current(state)?.revealed&&!E.current(state)?.answered)return;stopAudio();openModal(t('完整释义及用法','Full meanings & usage','Sens et usages complets'),fullWordContent(found.word),btn(t('词条与例句','Word & examples','Mot et exemples'),'word','','data-id="'+esc(id)+'"')+btn(t('完成','Done','Terminé'),'close','primary'),false,origin?{origin,shared:true}:null)}
+function fullWordModal(id,origin=null){const found=findWord(id);if(!found)return;if(view==='study'&&!E.current(state)?.revealed&&!E.current(state)?.answered)return;stopAudio();openModal(t('完整释义及用法','Full meanings & usage','Sens et usages complets'),fullWordContent(found.word)+'<div class="word-mastery-tools">'+masteryButton(id)+'</div>',btn(t('词条与例句','Word & examples','Mot et exemples'),'word','','data-id="'+esc(id)+'"')+btn(t('完成','Done','Terminé'),'close','primary'),false,origin?{origin,shared:true}:null)}
 function rememberImportView(){importReturn={body:$('#modal-body').innerHTML,footer:$('#modal-footer').innerHTML,name:$('#import-name').value,mode:$('#import-mode').value,target:$('#import-target').value,text:$('#import-text').value}}
 function restoreImportView(){if(!importReturn)return;openModal(t('导入词表','Import words','Importer une liste'),importReturn.body,importReturn.footer);$('#import-name').value=importReturn.name;$('#import-mode').value=importReturn.mode;$('#import-target').value=importReturn.target;$('#import-text').value=importReturn.text;renderImportPreview()}
 
-function wordModal(id,origin=null){stopAudio();const found=findWord(id);if(!found)return;const {word:w,deck}=found;openModal(w.french,'<div class="word-detail"><div class="row between"><div><div class="headword" lang="fr">'+esc(w.french)+'</div><div class="muted">'+esc(w.phonetic)+' · '+esc(w.pos)+'</div></div><button class="button" data-action="say-specific" data-id="'+esc(id)+'" aria-label="'+t('播放单词','Play word','Écouter')+'">'+icon('audio')+'</button></div><div class="meaning">'+esc(w.meaning)+'</div>'+genderAudio(w)+'<div class="usage">'+esc(w.usage)+'</div><div class="source-line" style="margin-top:16px">'+esc(deck.name)+' · '+(dueOf(id)?t('下次复习','Next review','Prochaine révision')+' '+date(dueOf(id)):t('尚未安排复习','Not scheduled yet','Pas encore planifié'))+'</div>'+fullDefinitionButton(w)+contexts(w).map(c=>contextCard(w,c)).join('')+'</div>',btn(t('编辑词条','Edit word','Modifier le mot'),'edit-word','','data-id="'+esc(id)+'"')+btn(t('添加例句 / 音频','Add example / audio','Ajouter exemple / audio'),'add-context','','data-word="'+esc(id)+'"')+btn(t('完成','Done','Terminé'),'close','primary'),false,origin?{origin,shared:true}:null)}
+function wordModal(id,origin=null){stopAudio();const found=findWord(id);if(!found)return;const {word:w,deck}=found;openModal(w.french,'<div class="word-detail"><div class="row between"><div><div class="headword" lang="fr">'+esc(w.french)+'</div><div class="muted">'+esc(w.phonetic)+' · '+esc(w.pos)+'</div></div><button class="button" data-action="say-specific" data-id="'+esc(id)+'" aria-label="'+t('播放单词','Play word','Écouter')+'">'+icon('audio')+'</button></div><div class="meaning">'+esc(w.meaning)+'</div>'+genderAudio(w)+'<div class="usage">'+esc(w.usage)+'</div><div class="word-mastery-tools">'+masteryButton(id)+'</div><div class="source-line" data-word-schedule="'+esc(id)+'" style="margin-top:16px">'+esc(deck.name)+' · '+wordSchedule(id)+'</div>'+fullDefinitionButton(w)+contexts(w).map(c=>contextCard(w,c)).join('')+'</div>',btn(t('编辑词条','Edit word','Modifier le mot'),'edit-word','','data-id="'+esc(id)+'"')+btn(t('添加例句 / 音频','Add example / audio','Ajouter exemple / audio'),'add-context','','data-word="'+esc(id)+'"')+btn(t('完成','Done','Terminé'),'close','primary'),false,origin?{origin,shared:true}:null)}
+function masteryLabel(mastered){return mastered?t('取消标熟','Unmark as known','Annuler le marquage'):t('标熟','Mark as known','Marquer comme connu')}
+function masteryTitle(mastered){return mastered?t('恢复标熟前的学习进度','Restore the previous learning progress','Rétablir la progression précédente'):t('完成该词进度，不再安排学习或练习','Complete this word and stop scheduling study or practice','Terminer ce mot et suspendre ses exercices')}
+function masteryButton(id){const mastered=E.isManuallyMastered(state,id),pending=wordMasteryPending.size>0;return '<button type="button" class="text-button word-mastery-button" data-action="master-word" data-id="'+esc(id)+'" aria-pressed="'+mastered+'" title="'+esc(masteryTitle(mastered))+'" '+(pending?'disabled aria-busy="true"':'')+'>'+masteryLabel(mastered)+'</button>'}
+function wordSchedule(id){return E.isManuallyMastered(state,id)?t('已标熟 · 不再安排练习','Marked as known · practice paused','Marqué comme connu · exercices suspendus'):dueOf(id)?t('下次复习','Next review','Prochaine révision')+' '+date(dueOf(id)):t('尚未安排复习','Not scheduled yet','Pas encore planifié')}
+const wordMasteryPending=new Set();
+function syncMasteryTools(){
+ const pending=wordMasteryPending.size>0;
+ $$('[data-action="master-word"]').forEach(button=>{const mastered=E.isManuallyMastered(state,button.dataset.id);button.disabled=pending;button.setAttribute('aria-pressed',String(mastered));button.textContent=masteryLabel(mastered);button.title=masteryTitle(mastered);if(pending)button.setAttribute('aria-busy','true');else button.removeAttribute('aria-busy')});
+ $$('[data-word-schedule]').forEach(node=>{const item=findWord(node.dataset.wordSchedule);if(item)node.textContent=item.deck.name+' · '+wordSchedule(item.word.id)});
+}
+async function toggleWordMastery(id){
+ if(wordMasteryPending.size||!findWord(id))return;
+ const mastered=E.isManuallyMastered(state,id),question=view==='study'?studyIdentity():null,navigation=navigationRevision,modal=modalRevision,wasStudy=view==='study';
+ const stillHere=()=>navigation===navigationRevision&&modal===modalRevision;
+ // Freeze only the current input while its exact text and selection are saved.
+ // The pending guard also prevents answers or undo from racing this operation.
+ const inputs=$$('.spell-input').map(input=>({input,readOnly:input.readOnly}));
+ inputs.forEach(({input})=>{input.readOnly=true});wordMasteryPending.add(id);syncMasteryTools();stopAudio();
+ try{
+  if(!await flushDraft()||!stillHere())return;
+  const ok=await change(s=>mastered?E.unmarkMastered(s,id):E.markMastered(s,id),{snapshot:true,requirePersistent:!PREVIEW,renderAfter:false,guard:s=>stillHere()&&E.isManuallyMastered(s,id)===mastered&&(!question||s.session?.id===question.sessionId&&s.session?.current?.token===question.token)});
+  if(!ok)return;
+  const returnToStudy=wasStudy&&stillHere();
+  if(returnToStudy){if($('#modal').open)closeModal();audioToken=''}
+  render();syncMasteryTools();
+  if(returnToStudy){if(mastered)restoreSpellingDraftFocus();else focusSpelling()}
+  savedToast(mastered?t('已取消标熟，恢复原学习进度。','Unmarked; previous progress restored.','Marquage annulé ; progression précédente rétablie.'):t('已标熟，不再安排练习。可在词条中取消标熟。','Marked as known; practice paused. You can unmark it from the word.','Mot marqué comme connu ; exercices suspendus. Vous pouvez annuler depuis le mot.'));
+ }finally{inputs.forEach(({input,readOnly})=>{input.readOnly=readOnly});wordMasteryPending.delete(id);syncMasteryTools()}
+}
 function genderEditorFields(w){return '<div class="gender-editor full"><label class="check-row"><input name="hasGender" type="checkbox" '+(w.hasGender?'checked':'')+'><span>'+t('显示相关阳性 / 阴性词形供参考','Show related masculine / feminine forms','Afficher les formes masculine / féminine associées')+'</span></label><div class="form-grid">'+field(t('阳性形式','Masculine','Masculin'),'masc',w.masc)+field(t('阴性形式','Feminine','Féminin'),'fem',w.fem)+'</div><label class="check-row"><input name="practiceGender" type="checkbox" '+(E.usesGenderPractice(w)?'checked':'')+'><span>'+t('同时练习两种词形（确认适用于重点释义后开启）','Practise both forms (only when both fit the key meaning)','Pratiquer les deux formes (si elles correspondent au sens essentiel)')+'</span></label><p class="license-note">'+t('关闭双词形练习后，使用下方的单一拼写目标（通常与词条一致）；相关词形仍保留供查看和朗读。','With this off, use the single spelling target below, usually the headword. Related forms remain available to view and hear.','Sinon, la réponse unique ci-dessous est utilisée, généralement le mot actuel. Les formes associées restent consultables et audibles.')+'</p></div>'}
 function singleSpellingValue(w){return E.usesGenderPractice(w)&&(!w.spell||[w.masc,w.fem].some(form=>E.normalize(form)===E.normalize(w.spell)))?w.french:w.spell||w.french}
 function editorGenderValues(values){const practiceGender=values.practiceGender==='on';return {hasGender:values.hasGender==='on'||practiceGender,practiceGender}}
@@ -8317,9 +8479,9 @@ const actions={
  'onboarding-defaults':exitOnboarding,
  'resume-close':async()=>{closeModal();await actions.resume()},
  'confirm-switch':async b=>{const kind=b.dataset.kind;if(!['learn','review','spelling','dictation'].includes(kind))return;closeModal();await begin(kind,{replace:true})},
- 'show-spelling-answer':async()=>{const key=studyIdentity();if(!['spelling','dictation'].includes(E.current(state)?.kind)||!await flushDraft())return;stopAudio();await change(s=>{E.reveal(s,'hint');return s},{guard:s=>sameQuestion(s,key)&&!s.session.current.answered})},
- 'reset-deck':b=>{const d=state.decks.find(d=>d.id===b.dataset.id);if(!d)return;confirmModal(t('重置词表进度','Reset deck progress','Réinitialiser la progression'),t('将把这个词表的学习、复习、拼写与听写记录清零，重新从未学习开始。词条、例句、音频与收藏保留；其他词表的进度不变。涉及此词表的未完成小组会结束。重置前会保留恢复快照。','This resets learning, review, spelling and dictation records for this deck. Words, examples, audio and favourites are kept. Other decks keep their progress. An unfinished group involving this deck will end. A recovery snapshot is saved first.','Cette liste repart de zéro. Mots, exemples, audio et favoris sont conservés, comme les progrès des autres listes. Un groupe concernant cette liste sera terminé. Un instantané est conservé avant la remise à zéro.')+' '+d.name+' · '+d.words.length+' '+t('词','words','mots'),'confirm-reset-deck','data-id="'+esc(d.id)+'"')},
- 'confirm-reset-deck':async b=>{const id=b.dataset.id;stopAudio();const ok=await change(s=>{const next=D.resetDeckProgress(s,id);E.ensureState(next);return next},{snapshot:true});if(ok){manageModal();savedToast(t('该词表已重新开始，词条内容已保留。','This deck starts fresh; its content is kept.','La liste repart de zéro ; son contenu est conservé.'))}},
+ 'show-spelling-answer':async()=>{if(wordMasteryPending.size)return;const key=studyIdentity();if(!['spelling','dictation'].includes(E.current(state)?.kind)||!await flushDraft())return;stopAudio();await change(s=>{E.reveal(s,'hint');return s},{guard:s=>sameQuestion(s,key)&&!s.session.current.answered})},
+ 'reset-deck':b=>{const d=state.decks.find(d=>d.id===b.dataset.id);if(!d)return;confirmModal(t('重置词表进度','Reset deck progress','Réinitialiser la progression'),t('将把这个词表的学习、复习、拼写与听写记录清零，重新从未学习开始，并取消标熟。词条、例句、音频与收藏保留；其他词表的进度不变。涉及此词表的未完成小组会结束。重置前会保留恢复快照。','This resets learning, review, spelling and dictation records for this deck. Manual known marks are cleared. Words, examples, audio and favourites are kept. Other decks keep their progress. An unfinished group involving this deck will end. A recovery snapshot is saved first.','Cette liste repart de zéro, sans marquage comme connu. Mots, exemples, audio et favoris sont conservés, comme les progrès des autres listes. Un groupe concernant cette liste sera terminé. Un instantané est conservé avant la remise à zéro.')+' '+d.name+' · '+d.words.length+' '+t('词','words','mots'),'confirm-reset-deck','data-id="'+esc(d.id)+'"')},
+ 'confirm-reset-deck':async b=>{const id=b.dataset.id;stopAudio();const ok=await change(s=>{const next=D.resetDeckProgress(s,id);E.ensureState(next);return next},{snapshot:true,requirePersistent:!PREVIEW});if(ok){manageModal();savedToast(t('该词表已重新开始，词条内容已保留。','This deck starts fresh; its content is kept.','La liste repart de zéro ; son contenu est conservé.'))}},
  nav:async b=>{const navigation=++navigationRevision;if(await flushDraft()===false||navigation!==navigationRevision)return;captureSettingsDraft();stopAudio();view=b.dataset.view;render()},
  'start-learn':()=>begin('learn'),'start-review':()=>begin('review'),'start-spelling':()=>begin('spelling'),'start-dictation':()=>begin('dictation'),
  resume:()=>begin(state.session?.kind||'learn'),pause:async()=>{const navigation=++navigationRevision;if(!await flushDraft()||navigation!==navigationRevision)return;stopAudio();view='today';render()},
@@ -8327,8 +8489,8 @@ const actions={
  choice:b=>answer({choice:b.dataset.id}),rate:b=>answer({rating:Number(b.dataset.rating)},true),
  next:async()=>{stopAudio();const ok=await questionChange(s=>{if(!s.session.current.answered)return false;E.next(s);return s});if(ok)focusSpelling()},
  'assisted-next':()=>answer({rating:3,typed:'',assisted:true},true),
- 'check-spelling':()=>{const value=typed();if(typeof value==='string'?!value.trim():!value.masc.trim()||!value.fem.trim()){toast(t('请先填写完整答案','Fill in the complete answer first','Complétez la réponse'));return}return answer({typed:value})},
- undo:async()=>{stopAudio();clearTimeout(draftTimer);const sessionId=state.session?.id,undo=state.session?.undo;if(!undo)return;const token=undo.session?.current?.token,eventsLength=undo.eventsLength;const ok=await change(s=>E.undo(s).ok?s:false,{guard:s=>s.session?.id===sessionId&&s.session.undo?.session?.current?.token===token&&s.session.undo?.eventsLength===eventsLength});if(ok)restoreSpellingDraftFocus()},
+ 'check-spelling':()=>{if(wordMasteryPending.size)return;const value=typed();if(typeof value==='string'?!value.trim():!value.masc.trim()||!value.fem.trim()){toast(t('请先填写完整答案','Fill in the complete answer first','Complétez la réponse'));return}return answer({typed:value})},
+ undo:async()=>{if(wordMasteryPending.size)return;stopAudio();clearTimeout(draftTimer);const sessionId=state.session?.id,undo=state.session?.undo;if(!undo)return;const token=undo.session?.current?.token,eventsLength=undo.eventsLength;const ok=await change(s=>E.undo(s).ok?s:false,{guard:s=>s.session?.id===sessionId&&s.session.undo?.session?.current?.token===token&&s.session.undo?.eventsLength===eventsLength});if(ok)restoreSpellingDraftFocus()},
  'skip-recall':()=>questionChange(s=>{E.skipToRecall(s);return s}),
  'end-session':async()=>{stopAudio();const sessionId=state.session?.id,navigation=navigationRevision;const ok=await change(s=>{E.finish(s);return s},{renderAfter:false,guard:s=>!!sessionId&&s.session?.id===sessionId});if(ok&&navigation===navigationRevision){view='today';render()}},
  'another-group':()=>begin(state.session?.kind||'learn',{replace:true}),
@@ -8339,9 +8501,9 @@ const actions={
  'say-specific':b=>{const {word}=findWord(b.dataset.id)||{};if(word){stopAudio();A.speak(speechText(word),{rate:state.settings.rate,voiceURI:state.settings.voiceURI,onStatus:audioStatus})}},
  'play-context':b=>playContext(b.dataset.word,b.dataset.context),
  'loop-context':b=>{if(loopTarget===b.dataset.word+'|'+b.dataset.context)stopAudio();else playContext(b.dataset.word,b.dataset.context,true)},
- accent:b=>{const input=(document.activeElement?.matches('.spell-input')?document.activeElement:null)||(lastSpellInput?.isConnected?lastSpellInput:null)||$('#spell-input')||$('#spell-masc');if(!input)return;input.setRangeText(b.dataset.accent,input.selectionStart,input.selectionEnd,'end');input.focus({preventScroll:true});input.dispatchEvent(new Event('input',{bubbles:true}))},
+ accent:b=>{if(wordMasteryPending.size)return;const input=(document.activeElement?.matches('.spell-input')?document.activeElement:null)||(lastSpellInput?.isConnected?lastSpellInput:null)||$('#spell-input')||$('#spell-masc');if(!input)return;input.setRangeText(b.dataset.accent,input.selectionStart,input.selectionEnd,'end');input.focus({preventScroll:true});input.dispatchEvent(new Event('input',{bubbles:true}))},
  'full-word':b=>fullWordModal(b.dataset.id,b),'preview-full':b=>{const w=importModel?effectiveImportEntries()[Number(b.dataset.index)]:null;if(w)openModal(t('完整释义及用法','Full meanings & usage','Sens et usages complets'),fullWordContent(w),btn(t('返回导入预览','Back to import preview','Retour à l’aperçu'),'preview-back','primary'))},'preview-back':restoreImportView,
- word:b=>wordModal(b.dataset.id,b.closest('.word-row,.context-card')||b),scope:scopeModal,manage:manageModal,import:importModal,close:closeModal,help:helpModal,seed,
+ 'master-word':b=>toggleWordMastery(b.dataset.id),word:b=>wordModal(b.dataset.id,b.closest('.word-row,.context-card')||b),scope:scopeModal,manage:manageModal,import:importModal,close:closeModal,help:helpModal,seed,
  'select-deck':b=>{selectedDeck=b.dataset.id;libraryPage=0;refreshLibraryResults()},
  'library-page':b=>{libraryPage=Number(b.dataset.page);refreshLibraryResults();const title=$('#library-results .library-summary');title?.scrollIntoView({block:'start',behavior:'instant'});title?.focus({preventScroll:true})},
  'context-more':async b=>{const previousCount=$$('.context-item:not([hidden])').length;contextLimit+=100;await updateContextView({animate:false});if(b.hidden){const items=$$('.context-item:not([hidden])');items[previousCount]?.querySelector('[data-action=play-context]')?.focus({preventScroll:true})}},
@@ -8370,7 +8532,7 @@ const actions={
  backup:()=>exportBackup(false),'backup-full':()=>exportBackup(true),restore:()=>$('#backup-input').click(),'commit-restore':commitRestore,portable:portableExport,
  snapshots:async()=>{const snapshots=await D.listSnapshots();openModal(t('恢复上次快照','Restore previous snapshot',"Restaurer l’état précédent"),snapshots.length?snapshots.map(x=>'<div class="manager-row row between"><span>'+new Date(x.savedAt).toLocaleString(locale())+'</span>'+btn(t('预览','Preview','Aperçu'),'snapshot-preview','','data-id="'+esc(x.id)+'"')+'</div>').join(''):'<p>'+t('导入替换、恢复或删除时会保留上一份快照。','A previous snapshot is kept before replacement, restoration or deletion.','Un instantané est conservé avant remplacement, restauration ou suppression.')+'</p>')},
  'snapshot-preview':async b=>{const item=(await D.listSnapshots()).find(x=>x.id===b.dataset.id);if(item)await prepareRestore({version:4,state:item.state},true)},
- progress:()=>{const s=state.session,c=E.current(state);const count=task=>s.queue.filter(x=>x.task===task).length+(s.current?.task===task&&!s.current.answered?1:0);openModal(t('本组进度','Group progress','Progression du groupe'),'<div class="stats-row"><div class="stat"><strong>'+s.completedIds.length+'</strong><span>'+t('已完成','Completed','Terminés')+'</span></div><div class="stat"><strong>'+s.failedIds.length+'</strong><span>'+t('待巩固','Deferred','À renforcer')+'</span></div><div class="stat"><strong>'+s.answers+'</strong><span>'+t('已作答','Answers','Réponses')+'</span></div></div><div class="divider"></div><p>'+t('待辨识','Recognition','Identification')+' · '+(count('choice')+count('listening-choice')+count('exposure'))+'</p><p>'+t('待回忆','Recall','Rappel')+' · '+count('recall')+'</p><p>'+t('待拼写 / 听写','Spelling / dictation','Orthographe / dictée')+' · '+(count('spelling')+count('dictation'))+'</p><p class="license-note" style="margin-top:15px">'+t('当前小组按开始时选定的词表继续。','The group keeps its original deck selection.','Le groupe conserve sa sélection initiale.')+'</p>','',true)},
+ progress:()=>{const s=state.session,c=E.current(state);const count=task=>s.queue.filter(x=>x.task===task).length+(s.current?.task===task&&!s.current.answered?1:0);openModal(t('本组进度','Group progress','Progression du groupe'),'<div class="stats-row"><div class="stat"><strong>'+new Set([...s.completedIds,...(s.masteredIds||[])]).size+'</strong><span>'+t('已完成','Completed','Terminés')+'</span></div><div class="stat"><strong>'+s.failedIds.length+'</strong><span>'+t('待巩固','Deferred','À renforcer')+'</span></div><div class="stat"><strong>'+s.answers+'</strong><span>'+t('已作答','Answers','Réponses')+'</span></div></div>'+((s.masteredIds||[]).length?'<p class="license-note">'+t('其中标熟','Including marked known','Dont marqués connus')+' · '+s.masteredIds.length+'</p>':'')+'<div class="divider"></div><p>'+t('待辨识','Recognition','Identification')+' · '+(count('choice')+count('listening-choice')+count('exposure'))+'</p><p>'+t('待回忆','Recall','Rappel')+' · '+count('recall')+'</p><p>'+t('待拼写 / 听写','Spelling / dictation','Orthographe / dictée')+' · '+(count('spelling')+count('dictation'))+'</p><p class="license-note" style="margin-top:15px">'+t('当前小组按开始时选定的词表继续。','The group keeps its original deck selection.','Le groupe conserve sa sélection initiale.')+'</p>','',true)},
  'study-options':studyOptions,'study-setting':toggleStudySetting,
  'skip-and-close':async()=>{closeModal();await actions['skip-recall']()}
 };
@@ -8396,7 +8558,7 @@ window.addEventListener('vocab-motionchange',()=>{if(weeklyReduced())cancelWeekl
 matchMedia('(prefers-reduced-motion:reduce)').addEventListener?.('change',()=>{if(weeklyReduced())cancelWeeklyNumbers()});
 document.addEventListener('pointerdown',e=>{if(e.target.closest('[data-action="accent"]'))e.preventDefault()});
 document.addEventListener('focusin',e=>{if(e.target.matches('.spell-input'))lastSpellInput=e.target});
-document.addEventListener('click',async e=>{if(resetInProgress)return;const b=e.target.closest('[data-action]');if(!b||b.disabled)return;const action=actions[b.dataset.action];if(!action)return;e.preventDefault();try{
+document.addEventListener('click',async e=>{if(resetInProgress)return;const b=e.target.closest('[data-action]');if(!b||b.disabled||b.dataset.action==='master-word'&&e.detail>1)return;const action=actions[b.dataset.action];if(!action)return;e.preventDefault();try{
  if(['preview-edit','preview-full'].includes(b.dataset.action))rememberImportView();
  await action(b);
 }catch(error){report(error)}});
