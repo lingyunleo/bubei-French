@@ -37,3 +37,8 @@ dialog{border:1px solid var(--line);padding:0;width:min(760px,calc(100vw - 48px)
 /* Keep temporary-save warnings in the page layout, including the study view. */
 .live-save-warning{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0;font-size:12px;padding:9px 12px}.live-save-warning span{overflow-wrap:anywhere}.live-save-warning .button{flex:none}#toast,#modal-toast{white-space:pre-line}
 @media(max-width:760px){.live-save-warning{font-size:11px;padding:7px 9px;gap:6px}.live-save-warning .button{padding:7px;font-size:11px}}
+
+/* Keep the stop control above the dialog footer, inside its active layer. */
+#audio-status{min-height:44px;font:inherit;font-size:12px;text-align:center;cursor:pointer}
+#modal > #audio-status{position:static;align-self:flex-end;flex:none;margin:0 24px 12px;max-width:calc(100% - 48px);min-height:44px;padding:10px 14px;font-size:13px}
+@media(max-width:760px){#modal > #audio-status{margin:0 16px 10px;max-width:calc(100% - 32px)}}

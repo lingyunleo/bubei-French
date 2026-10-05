@@ -14,7 +14,7 @@ I hope this website helps you remember French words more efficiently!
 
 ## Getting started
 
-1. Download the HTML file from the latest release: [不背法语-4.16.1.html](https://github.com/lingyunleo/bubei-French/releases/download/v4.16.1/bubei-French-4.16.1.html).
+1. Download the HTML file from the latest release: [不背法语-4.16.2.html](https://github.com/lingyunleo/bubei-French/releases/download/v4.16.2/bubei-French-4.16.2.html).
 2. Open the file in a common browser, such as Google Chrome, Safari, Microsoft Edge, or Firefox.
 3. Follow the onboarding guide to try out the features and make it your own. Then you're ready to start learning!
 
@@ -92,7 +92,7 @@ src/vendor/                Third-party libraries, licenses, and asset source lis
 tests/                     Automated checks
 scripts/build-release.py   Build entry point for the single-file HTML release
 release.json               Release version information
-不背法语-4.16.1.html         Current release entry point
+不背法语-4.16.2.html         Current release entry point
 LICENSE                    Project MIT license
 ```
 

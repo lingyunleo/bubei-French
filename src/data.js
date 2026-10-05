@@ -50,6 +50,17 @@
   function text(v, max, name, required = false) { if (typeof v !== 'string' || v.length > max || (required && !v.trim())) fail(name + '无效。'); return v.normalize('NFC').trim(); }
   function uid(prefix) { return prefix + '-' + (host.crypto?.randomUUID?.() || Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)); }
   function map(v, name) { if (!plain(v)) fail(name + '必须是对象。'); return v; }
+  function validateSkills(value) {
+    map(value, '词条技能数据');
+    for (const kind of ['spelling','listening']) {
+      if (value[kind] === undefined) continue;
+      const record = map(value[kind], '技能练习记录');
+      // Missing counters cannot be reconstructed without inventing practice history.
+      for (const key of ['attempts','correct','mistakes','assisted']) num(record[key],0,Number.MAX_SAFE_INTEGER,'技能练习次数');
+      if (record.corrections !== undefined) num(record.corrections,0,Number.MAX_SAFE_INTEGER,'技能订正次数');
+      if (record.lastPracticedAt !== undefined && record.lastPracticedAt !== null) num(record.lastPracticedAt,0,8640000000000000,'最近技能练习时间');
+    }
+  }
   function url(v, name) { v = text(v || '', 4000, name); if (v && !/^https?:\/\//i.test(v)) fail(name + '必须是 http 或 https 地址。'); return v; }
   function settings(extra) {
     const s = { ...DEFAULTS, ...extra };
@@ -104,8 +115,12 @@
     const wordIds = new Set(out.decks.flatMap(d => d.words.map(w => w.id)));
     for (const key of ['cards','skills','contexts','aliases']) for (const wordId of Object.keys(out[key])) {
       if (!wordIds.has(wordId)) fail('附加学习数据引用了不存在的词条。');
-      if (key === 'cards' || key === 'skills') map(out[key][wordId], '词条学习数据');
+      if (key === 'cards') map(out[key][wordId], '词条学习数据');
     }
+    for (const skill of Object.values(out.skills)) validateSkills(skill);
+    // Undo can restore an older skill record even when the current one is valid.
+    const undoSkill = out.session?.undo?.skill;
+    if (undoSkill !== undefined && undoSkill !== null) validateSkills(undoSkill);
     for (const card of Object.values(out.cards)) {
       if (card.dueAt !== undefined && card.dueAt !== null) num(card.dueAt,0,8640000000000000,'词条复习时间');
       for (const key of ['started','acquired']) if (card[key] !== undefined && typeof card[key] !== 'boolean') fail('词条学习状态无效。');

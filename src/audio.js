@@ -311,7 +311,9 @@
     return out;
   }
   async function validateMedia(records) {
-    if (!Array.isArray(records) || records.length > 2000) throw new Error('音频备份格式无效。');
+    // Match import/export capacity: recording count is unrestricted, while each
+    // decoded file and the complete restore still obey the byte limits below.
+    if (!Array.isArray(records)) throw new Error('音频备份格式无效。');
     let bytes = 0; const ids = new Set(), validated = [];
     for (const record of records) {
       if (!record || typeof record.id !== 'string' || !/^[a-zA-Z0-9_-]{1,160}$/.test(record.id) || ids.has(record.id) || builtins().some(item => item.id === record.id)) throw new Error('音频备份包含无效、重复或保留的标识。');

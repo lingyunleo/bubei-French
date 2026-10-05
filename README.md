@@ -14,7 +14,7 @@
 
 ## 快速上手
 
-1. 下载最新版附件中的 HTML 文件 [不背法语-4.16.1.html](https://github.com/lingyunleo/bubei-French/releases/download/v4.16.1/bubei-French-4.16.1.html)。
+1. 下载最新版附件中的 HTML 文件 [不背法语-4.16.2.html](https://github.com/lingyunleo/bubei-French/releases/download/v4.16.2/bubei-French-4.16.2.html)。
 2. 用 Google Chrome、Safari、Microsoft Edge、Firefox 等常见浏览器打开该文件。
 3. 跟随入门引导体验相关功能、完成个性化设置，之后就可以开始学习啦～
 
@@ -92,7 +92,7 @@ src/vendor/                第三方库、许可及素材来源清单
 tests/                     自动检查
 scripts/build-release.py   正式单 HTML 构建入口
 release.json               发布版本信息
-不背法语-4.16.1.html         当前正式使用入口
+不背法语-4.16.2.html         当前正式使用入口
 LICENSE                    项目 MIT 许可
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "bubei-french",
-  "version": "4.16.1",
+  "version": "4.16.2",
   "private": true,
   "description": "A local-first, single-file French vocabulary learning app.",
   "license": "MIT",
