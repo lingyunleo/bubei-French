@@ -2,7 +2,7 @@
 
 As many of you know, 不背单词 is a great app for learning English vocabulary. Its clean, elegant UI and science-based, efficient learning system make it a pleasure to use.
 
-But when I was learning French, I couldn't find a French vocabulary app as well designed as 不背单词, so I built my own French version as a website, with help from Codex.
+But when I was learning French, I couldn't find a French vocabulary app as well designed as 不背单词. So, I used Codex to build this French version of the app from scratch — a website passionately crafted over dozens of iterations, utilizing GPT-6 Astra and consuming over a billion tokens.
 
 One of the things that makes this website special is that everything lives in a single HTML file. All your data is stored locally, so you can use it anytime, anywhere, without signing up or connecting to the internet.
 
